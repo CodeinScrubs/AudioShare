@@ -28,6 +28,10 @@ static BOOL g_bWsaInitialized = FALSE;
 static BOOL g_bConnected = FALSE;
 static char g_connectCodeBuf[256] = {0};
 
+// Keep only a short amount of PCM queued when the Android side falls behind.
+// 32 KiB is about 170 ms at 48 kHz stereo PCM16.
+static const int kSocketAudioBufferBytes = 32 * 1024;
+
 // Callback to notify Dart that a client connected (passes connectCode)
 typedef void (*ConnectCallback)(const char* connectCode);
 static ConnectCallback g_connectCallback = NULL;
@@ -84,9 +88,9 @@ static DWORD WINAPI ListenThread(LPVOID lpParam) {
         g_clientSocket = accept(g_listenSocket, (sockaddr*)&clientAddr, &addrLen);
         if (g_clientSocket == INVALID_SOCKET) break;
 
-        // 256KB send buffer absorbs jitter without blocking the capture thread.
-        int sndbuf = 256 * 1024;
+        int sndbuf = kSocketAudioBufferBytes;
         setsockopt(g_clientSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&sndbuf, sizeof(sndbuf));
+        setsockopt(g_clientSocket, IPPROTO_TCP, TCP_NODELAY, (const char*)&opt, sizeof(opt));
 
         // Read connectCode from Android server (blocking)
         char buf[256] = {};

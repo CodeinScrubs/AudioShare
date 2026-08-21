@@ -5,12 +5,15 @@ import android.media.AudioFormat;
 import android.media.AudioTrack;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
+import android.os.Build;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
 public class Main {
+
+    private static final int SOCKET_AUDIO_BUFFER_BYTES = 32 * 1024;
 
     public static void main(String[] args) {
         try {
@@ -37,6 +40,11 @@ public class Main {
     private static LocalSocket connect(String abstractName, String connectCode) throws IOException {
         LocalSocket localSocket = new LocalSocket();
         localSocket.connect(new LocalSocketAddress(abstractName));
+        try {
+            localSocket.setReceiveBufferSize(SOCKET_AUDIO_BUFFER_BYTES);
+        } catch (IOException ignored) {
+            // Buffer tuning is optional and must not prevent the audio connection.
+        }
         OutputStream outputStream = localSocket.getOutputStream();
         outputStream.write(connectCode.getBytes());
         outputStream.flush();
@@ -69,10 +77,10 @@ public class Main {
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO);
 
         int minBuffer = AudioTrack.getMinBufferSize(sampleRate, channelMask, AudioFormat.ENCODING_PCM_16BIT);
-        // 8x minimum: WASAPI delivers audio in ~10ms engine-period bursts; a large buffer
-        // absorbs jitter so AudioTrack never underruns between bursts.
-        int trackBuffer = minBuffer * 8;
-        AudioTrack audioTrack = new AudioTrack.Builder()
+        // One minimum buffer of pre-roll plus one minimum buffer of headroom keeps
+        // engine-period jitter covered without queueing several hundred ms of audio.
+        int trackBuffer = minBuffer * 2;
+        AudioTrack.Builder audioTrackBuilder = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
@@ -83,14 +91,15 @@ public class Main {
                         .setChannelMask(channelMask)
                         .build())
                 .setBufferSizeInBytes(trackBuffer)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build();
+                .setTransferMode(AudioTrack.MODE_STREAM);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioTrackBuilder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY);
+        }
+        AudioTrack audioTrack = audioTrackBuilder.build();
 
         byte[] readBuf = new byte[minBuffer];
 
-        // Pre-roll: fill half the AudioTrack buffer before starting playback.
-        // This creates a timing cushion so the first 10ms engine-period gap never underruns.
-        int preRollTarget = trackBuffer / 2;
+        int preRollTarget = minBuffer;
         int preRolled = 0;
         outer:
         while (preRolled < preRollTarget) {

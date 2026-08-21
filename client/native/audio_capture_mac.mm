@@ -10,6 +10,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #include <AudioToolbox/AudioToolbox.h>
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -44,6 +45,10 @@ static pthread_mutex_t g_errorMutex = PTHREAD_MUTEX_INITIALIZER;
 static int  g_lastErrorCode = 0;
 static char g_lastErrorMessage[1024] = {0};
 static thread_local char g_errorMessageSnapshot[1024] = {0};
+
+// Keep only a short amount of PCM queued when the Android side falls behind.
+// 32 KiB is about 170 ms at 48 kHz stereo PCM16.
+static const int kSocketAudioBufferBytes = 32 * 1024;
 
 // ---- Helpers ----
 static void ClearCaptureError() {
@@ -126,8 +131,10 @@ static void* ListenThread(void* arg) {
         }
         g_clientFd = cfd;
 
-        int sndbuf = 256 * 1024;
+        int sndbuf = kSocketAudioBufferBytes;
         setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+        int noDelay = 1;
+        setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &noDelay, sizeof(noDelay));
 
         char buf[256] = {};
         ssize_t n = recv(cfd, buf, sizeof(buf) - 1, 0);
