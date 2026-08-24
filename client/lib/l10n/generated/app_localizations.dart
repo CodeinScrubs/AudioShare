@@ -110,6 +110,12 @@ abstract class AppLocalizations {
   /// **'OK'**
   String get ok;
 
+  /// No description provided for @openSystemSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open System Settings'**
+  String get openSystemSettings;
+
   /// No description provided for @noDevices.
   ///
   /// In en, this message translates to:
@@ -179,7 +185,7 @@ abstract class AppLocalizations {
   /// No description provided for @recordingPermissionDescription.
   ///
   /// In en, this message translates to:
-  /// **'Screen and system audio recording permission was not granted. In System Settings, go to Privacy & Security > Screen & System Audio Recording, allow AudioShare, then connect again.'**
+  /// **'In System Settings, go to Privacy & Security > Screen & System Audio Recording and allow AudioShare. macOS requires the app to restart before the new permission takes effect; quit and reopen AudioShare, then connect again.'**
   String get recordingPermissionDescription;
 
   /// No description provided for @connectionFailedTitle.

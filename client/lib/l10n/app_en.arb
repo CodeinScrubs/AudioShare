@@ -2,6 +2,7 @@
   "@@locale": "en",
   "appTitle": "AudioShare",
   "ok": "OK",
+  "openSystemSettings": "Open System Settings",
   "noDevices": "No devices found",
   "connect": "Connect",
   "connecting": "Connecting",
@@ -25,7 +26,7 @@
     }
   },
   "recordingPermissionTitle": "Recording permission required",
-  "recordingPermissionDescription": "Screen and system audio recording permission was not granted. In System Settings, go to Privacy & Security > Screen & System Audio Recording, allow AudioShare, then connect again.",
+  "recordingPermissionDescription": "In System Settings, go to Privacy & Security > Screen & System Audio Recording and allow AudioShare. macOS requires the app to restart before the new permission takes effect; quit and reopen AudioShare, then connect again.",
   "connectionFailedTitle": "Connection failed",
   "captureInitializationFailed": "System audio capture could not be initialized.",
   "captureStopped": "System audio capture stopped.",

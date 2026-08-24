@@ -15,6 +15,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ok => '确定';
 
   @override
+  String get openSystemSettings => '打开系统设置';
+
+  @override
   String get noDevices => '未找到设备';
 
   @override
@@ -53,7 +56,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get recordingPermissionDescription =>
-      '未获得“屏幕与系统音频录制”权限。请在“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”中允许 AudioShare，然后重新连接。';
+      '请在“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”中允许 AudioShare。macOS 需要重新启动应用才能让新权限生效；授权后请退出并重新打开 AudioShare，然后再次连接。';
 
   @override
   String get connectionFailedTitle => '连接失败';

@@ -246,12 +246,15 @@ class DataSource extends ChangeNotifier {
               _adb.stopServer();
               _audioCapture.stop();
               _connectStateMap[deviceId] = 0;
+              final error = _audioCapture.takeLastError(
+                fallbackCode: 1200,
+                fallbackMessage: '',
+              );
               _reportNativeError(
-                UiErrorType.captureStartFailed,
-                _audioCapture.takeLastError(
-                  fallbackCode: 1200,
-                  fallbackMessage: '',
-                ),
+                error?.code == 1002
+                    ? UiErrorType.recordingPermissionRequired
+                    : UiErrorType.captureStartFailed,
+                error,
               );
               return;
             }

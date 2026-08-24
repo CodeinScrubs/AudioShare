@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -128,12 +129,30 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
       UiErrorType.connectDeviceFailed => l10n.connectDeviceFailed,
     };
     if (error.nativeError case final nativeError?) {
-      return '${l10n.nativeErrorDescription(nativeError.code)}\n\n${l10n.nativeErrorDetailsFormatted(nativeError.code)}';
+      final nativeDetails =
+          '${l10n.nativeErrorDescription(nativeError.code)}\n\n${l10n.nativeErrorDetailsFormatted(nativeError.code)}';
+      if (error.type == UiErrorType.recordingPermissionRequired) {
+        return '$description\n\n$nativeDetails';
+      }
+      return nativeDetails;
     }
     if (error.exception case final exception?) {
       return '$description\n\n${l10n.exceptionDetails(exception.toString())}';
     }
     return description;
+  }
+
+  Future<void> _openScreenRecordingSettings() async {
+    if (!Platform.isMacOS) return;
+    const screenRecordingSettings =
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+    const privacySettings =
+        'x-apple.systempreferences:com.apple.preference.security';
+    final result =
+        await Process.run('/usr/bin/open', [screenRecordingSettings]);
+    if (result.exitCode != 0) {
+      await Process.run('/usr/bin/open', [privacySettings]);
+    }
   }
 
   Future<void> _showPendingError() async {
@@ -143,6 +162,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
       while (mounted) {
         final error = _dataSource.takePendingError();
         if (error == null) break;
+        if (!mounted) break;
         final l10n = AppLocalizations.of(context);
         await showDialog<void>(
           context: context,
@@ -152,6 +172,14 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                 : l10n.connectionFailedTitle),
             content: SelectableText(_errorDescription(l10n, error)),
             actions: [
+              if (error.type == UiErrorType.recordingPermissionRequired)
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    unawaited(_openScreenRecordingSettings());
+                  },
+                  child: Text(l10n.openSystemSettings),
+                ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: Text(l10n.ok),

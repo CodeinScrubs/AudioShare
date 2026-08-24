@@ -4,5 +4,6 @@
 // builds the target. For now it is left blank.
 PRODUCT_NAME = AudioShare
 PRODUCT_BUNDLE_IDENTIFIER = com.ysbing.audioshare
+DEVELOPMENT_TEAM = UZPC87PN5W
 PRODUCT_COPYRIGHT =
 MACOSX_DEPLOYMENT_TARGET = 13.0

@@ -71,6 +71,11 @@ static void SetNSErrorCaptureError(int code, NSError* error) {
     SetCaptureError(code);
 }
 
+static bool IsScreenCapturePermissionError(NSError* error) {
+    return error && [error.domain isEqualToString:SCStreamErrorDomain] &&
+        error.code == SCStreamErrorUserDeclined;
+}
+
 static void SendAll(int fd, const void* data, size_t len) {
     const uint8_t* ptr = (const uint8_t*)data;
     while (len > 0) {
@@ -291,6 +296,9 @@ int AudioCapture_RequestPermission() {
     if (@available(macOS 13.0, *)) {
         if (CGPreflightScreenCaptureAccess()) return 1;
         if (CGRequestScreenCaptureAccess()) return 1;
+        // CoreGraphics may keep reporting false for an allowed ScreenCaptureKit
+        // app on macOS 15+. Stream startup is the authoritative check there.
+        if (@available(macOS 15.0, *)) return 1;
         SetCaptureError(1002);
         return 0;
     }
@@ -347,7 +355,9 @@ extern "C" __attribute__((visibility("default")))
 int AudioCapture_Start() {
     ClearCaptureError();
     if (@available(macOS 13.0, *)) {
-        if (!CGPreflightScreenCaptureAccess()) {
+        if (@available(macOS 15.0, *)) {
+            // ScreenCaptureKit below performs the authoritative permission check.
+        } else if (!CGPreflightScreenCaptureAccess()) {
             SetCaptureError(1002);
             return 0;
         }
@@ -362,7 +372,9 @@ int AudioCapture_Start() {
                 if (timedOut) return;
                 if (error || !content || content.displays.count == 0) {
                     if (error) {
-                        SetNSErrorCaptureError(1201, error);
+                        SetNSErrorCaptureError(
+                            IsScreenCapturePermissionError(error) ? 1002 : 1201,
+                            error);
                     } else {
                         SetCaptureError(1202);
                     }
@@ -425,7 +437,9 @@ int AudioCapture_Start() {
                         g_bRunning = 0;
                         g_stream   = nil;
                         if (startErr) {
-                            SetNSErrorCaptureError(1204, startErr);
+                            SetNSErrorCaptureError(
+                                IsScreenCapturePermissionError(startErr) ? 1002 : 1204,
+                                startErr);
                         } else {
                             [stream stopCaptureWithCompletionHandler:^(NSError*) {}];
                         }

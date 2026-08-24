@@ -20,7 +20,7 @@ AudioShare sends Windows or macOS system audio to an Android device through ADB.
 2. Enable USB debugging on the Android device, then connect it by USB or pair it with ADB over Wi-Fi.
 3. Start AudioShare and select **Connect** when the device appears.
 
-On first use on macOS, allow **Screen & System Audio Recording** when prompted. To grant it later, open **System Settings > Privacy & Security > Screen & System Audio Recording**, then reconnect.
+On first use on macOS, allow **Screen & System Audio Recording** when prompted. To grant it later, open **System Settings > Privacy & Security > Screen & System Audio Recording**, then quit and reopen AudioShare before reconnecting.
 
 ## Requirements
 

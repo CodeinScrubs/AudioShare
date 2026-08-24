@@ -15,6 +15,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ok => 'OK';
 
   @override
+  String get openSystemSettings => 'Open System Settings';
+
+  @override
   String get noDevices => 'No devices found';
 
   @override
@@ -54,7 +57,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get recordingPermissionDescription =>
-      'Screen and system audio recording permission was not granted. In System Settings, go to Privacy & Security > Screen & System Audio Recording, allow AudioShare, then connect again.';
+      'In System Settings, go to Privacy & Security > Screen & System Audio Recording and allow AudioShare. macOS requires the app to restart before the new permission takes effect; quit and reopen AudioShare, then connect again.';
 
   @override
   String get connectionFailedTitle => 'Connection failed';

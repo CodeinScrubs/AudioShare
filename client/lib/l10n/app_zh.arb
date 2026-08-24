@@ -2,6 +2,7 @@
   "@@locale": "zh",
   "appTitle": "AudioShare",
   "ok": "确定",
+  "openSystemSettings": "打开系统设置",
   "noDevices": "未找到设备",
   "connect": "连接",
   "connecting": "连接中",
@@ -25,7 +26,7 @@
     }
   },
   "recordingPermissionTitle": "需要录制权限",
-  "recordingPermissionDescription": "未获得“屏幕与系统音频录制”权限。请在“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”中允许 AudioShare，然后重新连接。",
+  "recordingPermissionDescription": "请在“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”中允许 AudioShare。macOS 需要重新启动应用才能让新权限生效；授权后请退出并重新打开 AudioShare，然后再次连接。",
   "connectionFailedTitle": "连接失败",
   "captureInitializationFailed": "无法初始化系统音频捕获。",
   "captureStopped": "系统音频捕获已停止。",
