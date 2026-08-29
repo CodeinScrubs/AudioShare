@@ -140,6 +140,84 @@ abstract class AppLocalizations {
   /// **'Disconnect'**
   String get disconnect;
 
+  /// No description provided for @installCompanion.
+  ///
+  /// In en, this message translates to:
+  /// **'Install companion'**
+  String get installCompanion;
+
+  /// No description provided for @installingCompanion.
+  ///
+  /// In en, this message translates to:
+  /// **'Installing'**
+  String get installingCompanion;
+
+  /// No description provided for @usbUnauthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock the phone and approve USB debugging.'**
+  String get usbUnauthorized;
+
+  /// No description provided for @usbOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'USB device is offline. Reconnect the cable.'**
+  String get usbOffline;
+
+  /// No description provided for @ignoredAdbDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Ignored: connect this device by USB.'**
+  String get ignoredAdbDevice;
+
+  /// No description provided for @streamingAllSystemAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Streaming all Windows system audio'**
+  String get streamingAllSystemAudio;
+
+  /// No description provided for @phaseCheckingAdb.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking USB and ADB'**
+  String get phaseCheckingAdb;
+
+  /// No description provided for @phaseCheckingCompanion.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking Android companion'**
+  String get phaseCheckingCompanion;
+
+  /// No description provided for @phaseCreatingForward.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating USB transport'**
+  String get phaseCreatingForward;
+
+  /// No description provided for @phaseStartingCompanion.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting Android companion'**
+  String get phaseStartingCompanion;
+
+  /// No description provided for @phaseConnectingTransport.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting through USB'**
+  String get phaseConnectingTransport;
+
+  /// No description provided for @phaseHandshaking.
+  ///
+  /// In en, this message translates to:
+  /// **'Authenticating session'**
+  String get phaseHandshaking;
+
+  /// No description provided for @phaseInitializingCapture.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting system-audio capture'**
+  String get phaseInitializingCapture;
+
   /// No description provided for @autoConnectLastDevice.
   ///
   /// In en, this message translates to:

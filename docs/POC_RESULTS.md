@@ -13,11 +13,11 @@ acceptance has passed.
 
 ### Verified without a device
 
-The fork's bundled Windows executable reports:
+The fork's updated bundled Windows executable reports:
 
 ```text
 Android Debug Bridge version 1.0.41
-Version 33.0.3-8952118
+Version 37.0.1-15733141
 ```
 
 Its own help advertises:
@@ -32,6 +32,10 @@ forward --remove LOCAL
 
 This confirms that the pinned client exposes the required command syntax. It
 does not prove device daemon compatibility or actual data flow.
+
+The updated `adb.exe` SHA-256 is
+`B4A6B455702684652CCCF7B46258B29E653538904359A58FD4931CF3EF286B3F`.
+The matching platform-tools notice is included in Windows packaging.
 
 ### Existing ADB server observation
 
@@ -74,11 +78,13 @@ and process exit behavior.
 The requested scope is now **System Audio (All Apps)** on the selected/default
 render endpoint. Application/process loopback is not required.
 
-Status: source design is complete; executable POC is NOT RUN because this shell
-does not have the Visual Studio/CMake/Flutter desktop toolchain. The production
-design uses ordinary shared-mode endpoint loopback, owns all WASAPI interfaces
-on the capture thread, normalizes the actual endpoint mix format, and separates
-capture from blocking transport through a bounded queue.
+Status: the Windows native source compiles and links with strict MinGW warnings,
+and its protocol tests pass. Runtime capture remains NOT RUN because the
+production Flutter/MSVC desktop executable has not been built. The implementation
+uses ordinary event-driven shared-mode endpoint loopback, owns all WASAPI
+interfaces on the capture thread, asks the Windows audio engine to convert to
+48 kHz stereo PCM16, and separates capture from blocking transport through a
+bounded eight-chunk live-edge queue.
 
 Required checks remain:
 
@@ -109,6 +115,52 @@ Architecture evidence still favors ADB forward, but the transport decision is
 provisional until POC 1 runs on an authorized USB device. Production transport
 implementation can develop behind an interface with automated fake/protocol
 tests, but physical USB/firewall claims remain blocked.
+
+## Windows production-slice checkpoint
+
+Implemented and locally checked without claiming hardware behavior:
+
+- Windows native code has no listening export or `bind`/`listen` call and
+  connects only to `127.0.0.1:<allocated-forward-port>`;
+- a 256-bit per-session token authenticates a versioned framed handshake;
+- native transport and WASAPI capture run on separate bounded-lifecycle threads;
+- native wire-format golden/bounds/token tests compile and pass;
+- READY format values and periodic Android playback statistics are now validated
+  before being exposed as FFI diagnostic counters;
+- the DLL compiles and links under `-Wall -Wextra -Werror` and exports only the
+  outbound connection API;
+- Dart ADB commands have structured results, bounded output and timeouts,
+  secret redaction, exact resource cleanup, and isolated child environments;
+- supervised `adb track-devices -l` triggers refreshes, with a 15-second
+  recovery poll;
+- Flutter unit tests pass device-state/transport parsing,
+  no-metadata-on-network enforcement, companion discovery, token redaction,
+  dynamic forward parsing, and exact cleanup;
+- Windows Debug packaging includes the explicitly labeled debug POC APK and a
+  one-click install action; Profile/Release require a separately signed APK;
+- Windows manifest XML is valid and explicitly requests `asInvoker`.
+
+Flutter 3.47.2 / Dart 3.13.2 were staged outside the repositories. The following
+host checks now pass:
+
+```text
+flutter pub get
+flutter gen-l10n
+flutter analyze: No issues found
+flutter test: 4 tests passed
+```
+
+The tests cover isolated ADB environment construction, USB/state parsing,
+non-USB fail-closed behavior, companion selection, secret redaction, dynamic
+forward parsing, and exact cleanup. A Windows Debug build was attempted, but
+Flutter correctly refused because the detected Visual Studio 2026 Insiders
+installation lacks the Desktop C++ workload components, CMake tools, and Windows
+10 SDK required by Flutter. No MSVC or Flutter Windows artifact is claimed.
+
+The Windows CMake project also configured and generated successfully with
+CMake 4.3.2/Ninja against a temporary MinGW toolchain. This validates the edited
+CMake graph and packaging syntax, but is not substituted for the required MSVC
+Flutter link/build.
 
 ## Installed companion: hardware-independent slice
 

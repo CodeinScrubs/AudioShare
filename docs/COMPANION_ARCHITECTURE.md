@@ -68,9 +68,8 @@ Daily:
 - classify transports and react only to the remembered authorized USB phone;
 - check package/protocol compatibility;
 - generate a unique short socket name and 256-bit token;
-- explicitly launch the bridge Activity over ADB;
-- wait for the Android LocalServerSocket readiness/lifecycle result;
 - create `forward --no-rebind tcp:0 localabstract:<socket>`;
+- explicitly launch the bridge Activity over ADB;
 - connect outbound to the returned `127.0.0.1` port and authenticate;
 - start system endpoint loopback and stream framed PCM; and
 - remove only this session's exact mapping during teardown.
@@ -114,14 +113,15 @@ The host retains the reliability design from `LOCKED_DOWN_WINDOWS_DESIGN.md`:
   disruption;
 - event-driven shared-mode endpoint loopback with all COM/WASAPI lifetime on
   the capture thread;
-- correct PCM/float and channel-layout conversion;
+- canonical 48 kHz stereo PCM16 requested through Windows shared-mode engine
+  conversion;
 - a bounded capture-to-transport queue with live-edge policy; and
 - explicit transport, capture, signal, and playback states.
 
-The main UI defaults to Follow Windows default output and permits selecting a
-single render endpoint. Simultaneous multi-endpoint mixing is not initially
-promised because the endpoints have independent clocks and may contain duplicate
-audio.
+The current implementation follows the Windows default console render endpoint.
+Manual endpoint selection and endpoint-change recovery are still planned.
+Simultaneous multi-endpoint mixing is not promised because endpoints have
+independent clocks and may contain duplicate audio.
 
 ## Evidence gate
 

@@ -1,3 +1,7 @@
+enum AdbDeviceState { authorized, unauthorized, offline, unknown }
+
+enum AdbTransportType { usb, network, emulator, unknown }
+
 class DeviceModel {
   final String deviceId;
   final bool usb;
@@ -8,6 +12,9 @@ class DeviceModel {
   final String apiLevel;
   final String ip;
   final String port;
+  final AdbDeviceState adbState;
+  final AdbTransportType transportType;
+  final int? transportId;
 
   DeviceModel({
     required this.deviceId,
@@ -19,5 +26,12 @@ class DeviceModel {
     required this.apiLevel,
     required this.ip,
     required this.port,
+    this.adbState = AdbDeviceState.authorized,
+    this.transportType = AdbTransportType.unknown,
+    this.transportId,
   });
+
+  bool get connectableUsb =>
+      adbState == AdbDeviceState.authorized &&
+      transportType == AdbTransportType.usb;
 }

@@ -1,0 +1,5 @@
+# Preserve the upstream Android platform-tools notice byte-for-byte. It contains
+# intentional historical whitespace from many bundled third-party licenses.
+client/assets/platform-tools-NOTICE.txt -diff
+
+client/assets/android/*.apk binary

@@ -30,6 +30,45 @@ class AppLocalizationsEn extends AppLocalizations {
   String get disconnect => 'Disconnect';
 
   @override
+  String get installCompanion => 'Install companion';
+
+  @override
+  String get installingCompanion => 'Installing';
+
+  @override
+  String get usbUnauthorized => 'Unlock the phone and approve USB debugging.';
+
+  @override
+  String get usbOffline => 'USB device is offline. Reconnect the cable.';
+
+  @override
+  String get ignoredAdbDevice => 'Ignored: connect this device by USB.';
+
+  @override
+  String get streamingAllSystemAudio => 'Streaming all Windows system audio';
+
+  @override
+  String get phaseCheckingAdb => 'Checking USB and ADB';
+
+  @override
+  String get phaseCheckingCompanion => 'Checking Android companion';
+
+  @override
+  String get phaseCreatingForward => 'Creating USB transport';
+
+  @override
+  String get phaseStartingCompanion => 'Starting Android companion';
+
+  @override
+  String get phaseConnectingTransport => 'Connecting through USB';
+
+  @override
+  String get phaseHandshaking => 'Authenticating session';
+
+  @override
+  String get phaseInitializingCapture => 'Starting system-audio capture';
+
+  @override
   String get autoConnectLastDevice =>
       'Automatically connect to the last used device';
 

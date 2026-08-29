@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data_source.dart';
 import 'l10n/app_localizations_extensions.dart';
 import 'l10n/generated/app_localizations.dart';
+import 'models/device_model.dart';
 import 'utils/prefs.dart';
 
 const _supportedLocales = [Locale('en'), Locale('zh')];
@@ -14,12 +15,9 @@ const _languagePreferenceKey = 'locale';
 
 void main() {
   Prefs.load();
-  runZonedGuarded(
-    () => runApp(const AudioShareApp()),
-    (error, stack) {
-      debugPrint('Uncaught error: $error\n$stack');
-    },
-  );
+  runZonedGuarded(() => runApp(const AudioShareApp()), (error, stack) {
+    debugPrint('Uncaught error: $error\n$stack');
+  });
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
   };
@@ -39,7 +37,9 @@ class _AudioShareAppState extends State<AudioShareApp> {
   void initState() {
     super.initState();
     final savedLanguage = Prefs.getString(_languagePreferenceKey);
-    if (_supportedLocales.any((locale) => locale.languageCode == savedLanguage)) {
+    if (_supportedLocales.any(
+      (locale) => locale.languageCode == savedLanguage,
+    )) {
       _locale = Locale(savedLanguage);
     }
   }
@@ -49,7 +49,10 @@ class _AudioShareAppState extends State<AudioShareApp> {
     setState(() => _locale = locale);
   }
 
-  Locale _resolveLocale(Locale? deviceLocale, Iterable<Locale> supportedLocales) {
+  Locale _resolveLocale(
+    Locale? deviceLocale,
+    Iterable<Locale> supportedLocales,
+  ) {
     final languageCode = deviceLocale?.languageCode;
     return supportedLocales.firstWhere(
       (locale) => locale.languageCode == languageCode,
@@ -119,8 +122,10 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
 
   String _errorDescription(AppLocalizations l10n, UiError error) {
     final description = switch (error.type) {
-      UiErrorType.recordingPermissionRequired => l10n.recordingPermissionDescription,
-      UiErrorType.captureInitializationFailed => l10n.captureInitializationFailed,
+      UiErrorType.recordingPermissionRequired =>
+        l10n.recordingPermissionDescription,
+      UiErrorType.captureInitializationFailed =>
+        l10n.captureInitializationFailed,
       UiErrorType.captureStopped => l10n.captureStopped,
       UiErrorType.captureStartFailed => l10n.captureStartFailed,
       UiErrorType.listenerStartFailed => l10n.listenerStartFailed,
@@ -148,8 +153,9 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
         'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
     const privacySettings =
         'x-apple.systempreferences:com.apple.preference.security';
-    final result =
-        await Process.run('/usr/bin/open', [screenRecordingSettings]);
+    final result = await Process.run('/usr/bin/open', [
+      screenRecordingSettings,
+    ]);
     if (result.exitCode != 0) {
       await Process.run('/usr/bin/open', [privacySettings]);
     }
@@ -167,9 +173,11 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text(error.type == UiErrorType.recordingPermissionRequired
-                ? l10n.recordingPermissionTitle
-                : l10n.connectionFailedTitle),
+            title: Text(
+              error.type == UiErrorType.recordingPermissionRequired
+                  ? l10n.recordingPermissionTitle
+                  : l10n.connectionFailedTitle,
+            ),
             content: SelectableText(_errorDescription(l10n, error)),
             actions: [
               if (error.type == UiErrorType.recordingPermissionRequired)
@@ -212,8 +220,14 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
             icon: const Icon(Icons.language),
             onSelected: widget.onLocaleChanged,
             itemBuilder: (context) => [
-              PopupMenuItem(value: const Locale('en'), child: Text(l10n.languageEnglish)),
-              PopupMenuItem(value: const Locale('zh'), child: Text(l10n.languageChinese)),
+              PopupMenuItem(
+                value: const Locale('en'),
+                child: Text(l10n.languageEnglish),
+              ),
+              PopupMenuItem(
+                value: const Locale('zh'),
+                child: Text(l10n.languageChinese),
+              ),
             ],
           ),
         ],
@@ -221,7 +235,12 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
       body: SizedBox(
         width: 360,
         height: 540,
-        child: Column(children: [Expanded(child: _buildContent(l10n)), _buildCheckBox(l10n)]),
+        child: Column(
+          children: [
+            Expanded(child: _buildContent(l10n)),
+            _buildCheckBox(l10n),
+          ],
+        ),
       ),
     );
   }
@@ -240,55 +259,108 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
             final device = _dataSource.devices[index];
             final connectState = _dataSource.getConnectState(device.deviceId);
             final connectEnable = _dataSource.getConnectEnable(device.deviceId);
+            final companionMissing = _dataSource.isCompanionMissing(
+              device.deviceId,
+            );
+            final companionInstalling = _dataSource.isCompanionInstalling(
+              device.deviceId,
+            );
             final apiLevel = int.tryParse(device.apiLevel) ?? 0;
             final port = int.tryParse(device.port) ?? 0;
             final connectionLabel = switch (connectState) {
+              0 when companionInstalling => l10n.installingCompanion,
+              0 when companionMissing => l10n.installCompanion,
               0 => l10n.connect,
               1 => l10n.connecting,
               2 => l10n.disconnect,
               _ => l10n.connect,
             };
+            final deviceName =
+                '${device.manufacturer} ${device.model}'.trim().isEmpty
+                    ? device.deviceId
+                    : '${device.manufacturer} ${device.model}'.trim();
+            final phase = _dataSource.getConnectionPhase(device.deviceId);
+            final phaseStatus = switch (phase) {
+              ConnectionPhase.checkingAdb => l10n.phaseCheckingAdb,
+              ConnectionPhase.checkingCompanion => l10n.phaseCheckingCompanion,
+              ConnectionPhase.creatingForward => l10n.phaseCreatingForward,
+              ConnectionPhase.startingCompanion => l10n.phaseStartingCompanion,
+              ConnectionPhase.connectingTransport =>
+                l10n.phaseConnectingTransport,
+              ConnectionPhase.handshaking => l10n.phaseHandshaking,
+              ConnectionPhase.initializingCapture =>
+                l10n.phaseInitializingCapture,
+              _ => null,
+            };
+            final deviceStatus = switch (device.adbState) {
+              AdbDeviceState.unauthorized => l10n.usbUnauthorized,
+              AdbDeviceState.offline => l10n.usbOffline,
+              _ when device.transportType != AdbTransportType.usb =>
+                l10n.ignoredAdbDevice,
+              _ when connectState == 2 => l10n.streamingAllSystemAudio,
+              _ when phaseStatus != null => phaseStatus,
+              _ when companionMissing => l10n.installCompanion,
+              _ =>
+                '${l10n.deviceAndroidVersionFormatted(device.androidVersion, apiLevel)}${device.usb ? '' : l10n.deviceNetworkAddressFormatted(device.ip, port)}',
+            };
             return SizedBox(
-              height: 60,
-              child: Row(children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 10),
-                  child: Icon(device.usb ? Icons.usb : Icons.wifi, size: 24),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${device.manufacturer} ${device.model}', style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${l10n.deviceAndroidVersionFormatted(device.androidVersion, apiLevel)}${device.usb ? '' : l10n.deviceNetworkAddressFormatted(device.ip, port)}',
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+              height: 72,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: Icon(device.usb ? Icons.usb : Icons.wifi, size: 24),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            deviceName,
+                            style: const TextStyle(fontSize: 14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            deviceStatus,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: ElevatedButton(
-                    onPressed: connectEnable
-                        ? () {
-                            if (connectState == 0) {
-                              _dataSource.connectDevice(device.deviceId, userInitiated: true);
-                            } else if (connectState == 2) {
-                              _dataSource.disconnectDevice(device.deviceId);
-                            }
-                          }
-                        : null,
-                    child: Text(connectionLabel),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: ElevatedButton(
+                      onPressed: companionInstalling
+                          ? null
+                          : companionMissing && connectEnable
+                              ? () => unawaited(
+                                    _dataSource
+                                        .installCompanion(device.deviceId),
+                                  )
+                              : connectEnable
+                                  ? () {
+                                      if (connectState == 0) {
+                                        _dataSource.connectDevice(
+                                          device.deviceId,
+                                          userInitiated: true,
+                                        );
+                                      } else if (connectState == 2) {
+                                        _dataSource
+                                            .disconnectDevice(device.deviceId);
+                                      }
+                                    }
+                                  : null,
+                      child: Text(connectionLabel),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
             );
           },
         );
@@ -300,10 +372,15 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
   Widget _buildCheckBox(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.only(left: 10, bottom: 10),
-      child: Row(children: [
-        Checkbox(value: _dataSource.lastCheck, onChanged: (value) => _dataSource.lastCheck = value ?? false),
-        Expanded(child: Text(l10n.autoConnectLastDevice)),
-      ]),
+      child: Row(
+        children: [
+          Checkbox(
+            value: _dataSource.lastCheck,
+            onChanged: (value) => _dataSource.lastCheck = value ?? false,
+          ),
+          Expanded(child: Text(l10n.autoConnectLastDevice)),
+        ],
+      ),
     );
   }
 }

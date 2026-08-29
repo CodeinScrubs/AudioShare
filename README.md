@@ -1,85 +1,103 @@
-# AudioShare
+# AudioShare USB Custom
 
-Stream Windows and macOS system audio to Android over ADB.
+Stream **all Windows system audio** to an Android phone speaker over a USB ADB
+connection. This fork is being specialized for a portable, standard-user,
+firewall-independent Windows workflow.
 
-[English](README.md) | [简体中文](docs/README.zh-CN.md)
+Development status: the Android companion builds and its unit/lint checks pass;
+the Windows native transport compiles and its protocol tests pass. Physical USB,
+phone playback, firewall-prompt, latency, and long-run tests are still required
+before this fork is release-ready. See [POC results](docs/POC_RESULTS.md).
 
-AudioShare sends Windows or macOS system audio to an Android device through ADB. It works over USB and ADB over Wi-Fi, requires no extra hardware, and plays computer audio through the phone's speaker or headphones.
+## Architecture
 
-## Features
+```text
+all Windows applications and system sounds
+                -> WASAPI loopback
+                -> 48 kHz stereo PCM16
+                -> outbound 127.0.0.1 connection
+                -> ADB forward over USB
+                -> installed Android companion
+                -> AudioTrack
+                -> phone speaker
+```
 
-- WASAPI loopback system-audio capture on Windows (48 kHz stereo PCM16).
-- ScreenCaptureKit system-audio capture on macOS 13 or later.
-- USB and ADB over Wi-Fi connections through an ADB reverse tunnel.
-- Automatic reconnection to the last used device.
-- Bundled ADB and Android server, with no separate Android app to install.
+The Windows program creates no listening audio socket. Automatic mode rejects
+Wi-Fi ADB and emulators. The Android companion declares no `INTERNET` permission.
+No virtual audio driver, firewall rule, LAN, Wi-Fi, Internet, installer, Windows
+service, or administrator elevation is intentionally required at runtime.
 
-## Quick Start
+## First time only
 
-1. Download the package for your platform from [Releases](https://github.com/ysbing/AudioShare/releases) and extract it.
-2. Enable USB debugging on the Android device, then connect it by USB or pair it with ADB over Wi-Fi.
-3. Start AudioShare and select **Connect** when the device appears.
+1. Extract the complete Windows package to a normal user-writable folder.
+2. Enable Android Developer Options and USB debugging.
+3. Connect the phone with a data-capable USB cable.
+4. Unlock the phone and approve **Allow USB debugging?** for this computer.
+5. Start AudioShare. Select the authorized USB phone.
+6. If prompted, choose **Install companion**. This is an explicit one-time ADB
+   APK installation; AudioShare never silently installs an app in the background.
+7. Choose **Connect** and confirm that system audio plays through the phone.
+8. Leave automatic reconnection enabled for the remembered phone.
 
-On first use on macOS, allow **Screen & System Audio Recording** when prompted. To grant it later, open **System Settings > Privacy & Security > Screen & System Audio Recording**, then quit and reopen AudioShare before reconnecting.
+The PC must already have a working Android USB/ADB driver. Installing a missing
+driver can require administrator access and is outside AudioShare's control.
 
-## Requirements
+## Daily use target
 
-| Platform | Runtime requirements | Build requirements |
-| --- | --- | --- |
-| Windows | Windows 10/11 x64 and working ADB drivers | Flutter 3.x and Visual Studio 2022+ with the Desktop C++ workload |
-| macOS | macOS 13+ | Flutter 3.x and Xcode 14+ |
-| Android device | USB debugging enabled, or paired ADB over Wi-Fi | Android Studio or JDK, only when building the server |
+1. Start or log in to Windows with AudioShare running.
+2. Plug in the remembered, authorized phone by USB.
+3. Play sound from any Windows application, including Infinit/idplayer.
 
-Use the language menu in the upper-right corner to choose English or Simplified Chinese. Enable the option at the bottom of the window to reconnect automatically on future launches.
+The intended final workflow requires no Android UI, IP address, Wi-Fi, Internet,
+firewall approval, or Connect click. That zero-click behavior is implemented but
+not yet hardware-verified.
 
-## Build from Source
+## Build from source
 
-```bash
-cd client
+Host prerequisites are Flutter 3.x and Visual Studio 2022 or newer with Desktop
+C++. From `client`:
+
+```powershell
 flutter pub get
 flutter gen-l10n
 flutter analyze
 flutter test
+flutter build windows --debug
 ```
 
-Build the Windows client:
+Debug builds bundle the clearly labeled POC debug companion APK. A distributable
+release must use a stable signing key and provide the signed APK explicitly:
 
 ```powershell
-cd client
+$env:AUDIOSHARE_COMPANION_APK = 'C:\absolute\path\audioshare-companion.apk'
 flutter build windows --release
 ```
 
-Output: `client/build/windows/x64/runner/Release/audioshare.exe`
+The sibling `client android app` Git repository owns the native companion:
 
-Build the macOS client:
-
-```bash
-cd client
-flutter build macos --release
+```powershell
+cd '..\client android app'
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat testDebugUnitTest lintRelease assembleRelease --no-daemon
 ```
 
-Output: `client/build/macos/Build/Products/Release/AudioShare.app`
+Additional native protocol check:
 
-Build the Android server. The output is copied to `client/assets/server`:
-
-```bash
-./gradlew :server:assembleRelease
+```powershell
+g++ -std=c++17 -Wall -Wextra -Werror client/native/wire_protocol_test.cpp
 ```
 
-## Project Structure
+## Documentation
 
-```text
-AudioShare/
-├── client/                  Flutter desktop client
-│   ├── lib/                 UI, device state, ADB, and FFI bindings
-│   ├── native/              Windows and macOS audio-capture implementations
-│   ├── assets/              Bundled ADB binaries and Android server
-│   ├── windows/             Windows runner and CMake configuration
-│   └── macos/               macOS runner and Xcode configuration
-├── server/                  Android audio playback server
-└── tools/                   Repository tooling and branding assets
-```
+- [Selected companion architecture](docs/COMPANION_ARCHITECTURE.md)
+- [Wire protocol](docs/PROTOCOL.md)
+- [Evidence and POC results](docs/POC_RESULTS.md)
+- [Layered troubleshooting](docs/TROUBLESHOOTING.md)
+- [Manual test plan](docs/MY_TEST_PLAN.md)
+- [Pinned upstream baseline](docs/BASELINE.md)
 
 ## License
 
-Licensed under [LGPL-3.0-or-later](LICENSE).
+Licensed under [LGPL-3.0-or-later](LICENSE). Bundled Android platform-tools
+notices are preserved in `client/assets/platform-tools-NOTICE.txt` and copied
+into Windows distributions.

@@ -69,9 +69,26 @@ The receiver queue is bounded and applies a live-edge policy: when full, it
 drops complete oldest PCM chunks, increments dropped-frame statistics, and
 never accumulates seconds of obsolete audio.
 
+## Heartbeat and playback statistics
+
+The host sends an empty STATS request every three seconds after READY. Android
+returns a 24-byte big-endian payload:
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 8 | Total PCM frames received by the playback worker |
+| 8 | 8 | Total PCM frames dropped by the bounded playback queue |
+| 16 | 4 | Current queued chunk count |
+| 20 | 4 | Configured AudioTrack buffer frames |
+
+This response also acts as the active heartbeat. The Windows native layer
+validates the exact length before decoding and exposes these counters through
+the FFI diagnostics API. PING/PONG remains supported for protocol tests and
+future peers.
+
 ## Current POC gaps
 
 ERROR payload schema, capability negotiation, monotonic sequence rollover,
-timestamp semantics, focus/flush messages, keepalive intervals, and final STATS
-schema remain provisional. They must be finalized with mirrored Windows and
-Android golden-vector tests before protocol version 1 is declared stable.
+timestamp semantics, and focus/flush messages remain provisional. They must be
+finalized with mirrored Windows and Android golden-vector tests before protocol
+version 1 is declared stable.

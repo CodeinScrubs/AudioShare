@@ -1,170 +1,751 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import '../models/device_model.dart';
 
-class AdbService {
-  String _adbPath = '';
-  Process? _launchProcess;
+const _companionLaunchAction = 'com.audioshare.usbcompanion.LAUNCH_SESSION';
 
-  AdbService() {
-    _initAdbPath();
-  }
+class CompanionInstallation {
+  const CompanionInstallation(this.packageName);
 
-  void _initAdbPath() {
-    final sep = Platform.pathSeparator;
-    final exeDir = File(Platform.resolvedExecutable).parent.path;
+  final String packageName;
 
-    if (Platform.isWindows) {
-      // Windows: copy adb.exe + Win32 DLLs to temp so the daemon persists
-      // across restarts (the bundle dir may be read-only when installed).
-      final tempDir = '${Directory.systemTemp.path}${sep}ysbing${sep}AudioShare${sep}adb';
-      final tempAdb = '$tempDir${sep}adb.exe';
-      try {
-        Directory(tempDir).createSync(recursive: true);
-        for (final name in ['adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll']) {
-          final src = File('$exeDir$sep$name');
-          if (src.existsSync()) {
-            try { src.copySync('$tempDir$sep$name'); } catch (_) {}
-          }
-        }
-        if (File(tempAdb).existsSync()) {
-          _adbPath = tempAdb;
-          return;
-        }
-      } catch (_) {}
-      _adbPath = '$exeDir${sep}adb.exe';
-      return;
+  String get activityComponent =>
+      '$packageName/com.audioshare.usbcompanion.BridgeActivity';
+
+  static const release = CompanionInstallation('com.audioshare.usbcompanion');
+  static const debug = CompanionInstallation(
+    'com.audioshare.usbcompanion.debug',
+  );
+}
+
+Map<String, String> buildUsbOnlyAdbEnvironment(
+  Map<String, String> parentEnvironment,
+) {
+  const forbiddenKeys = {
+    'ADB_SERVER_SOCKET',
+    'ANDROID_ADB_SERVER_ADDRESS',
+    'ANDROID_ADB_SERVER_PORT',
+    'ANDROID_SERIAL',
+  };
+  final environment = Map<String, String>.of(parentEnvironment)
+    ..removeWhere((key, _) => forbiddenKeys.contains(key.toUpperCase()));
+  environment['ADB_MDNS'] = '0';
+  environment['ADB_MDNS_AUTO_CONNECT'] = '0';
+  environment['ADB_EMU'] = '0';
+  return environment;
+}
+
+extension _LastOrNull<T> on Iterable<T> {
+  T? get lastOrNull {
+    T? result;
+    for (final value in this) {
+      result = value;
     }
-
-    // macOS / Linux: adb is bundled next to the executable by the build phase.
-    _adbPath = '$exeDir${sep}adb';
+    return result;
   }
+}
 
-  Future<String> _exec(List<String> arguments) async {
-    try {
-      final result = await Process.run(_adbPath, arguments);
-      final stdout = result.stdout as String;
-      final stderr = result.stderr as String;
-      if (stdout.isNotEmpty) return stdout;
-      if (stderr.isNotEmpty) return stderr;
-      return '';
-    } catch (_) {
-      return '';
-    }
+class AdbCommandRequest {
+  const AdbCommandRequest({
+    required this.operation,
+    required this.arguments,
+    this.timeout = const Duration(seconds: 8),
+    this.sensitiveArgumentIndexes = const <int>{},
+  });
+
+  final String operation;
+  final List<String> arguments;
+  final Duration timeout;
+  final Set<int> sensitiveArgumentIndexes;
+
+  List<String> get safeArguments => List<String>.generate(
+        arguments.length,
+        (index) => sensitiveArgumentIndexes.contains(index)
+            ? '<redacted>'
+            : arguments[index],
+        growable: false,
+      );
+}
+
+class AdbCommandResult {
+  const AdbCommandResult({
+    required this.operation,
+    required this.executable,
+    required this.arguments,
+    required this.exitCode,
+    required this.stdout,
+    required this.stderr,
+    required this.duration,
+    required this.timedOut,
+    this.spawnError,
+  });
+
+  final String operation;
+  final String executable;
+  final List<String> arguments;
+  final int? exitCode;
+  final String stdout;
+  final String stderr;
+  final Duration duration;
+  final bool timedOut;
+  final Object? spawnError;
+
+  bool get succeeded => !timedOut && spawnError == null && exitCode == 0;
+
+  @override
+  String toString() {
+    final status = timedOut
+        ? 'timed out'
+        : spawnError != null
+            ? 'could not start'
+            : 'exit ${exitCode ?? 'unknown'}';
+    final details = stderr.trim().isNotEmpty ? stderr.trim() : stdout.trim();
+    return '$operation $status after ${duration.inMilliseconds} ms'
+        '${details.isEmpty ? '' : ': $details'}';
   }
+}
 
-  // Cache device properties: they never change while connected.
-  final Map<String, DeviceModel> _deviceCache = {};
+class AdbCommandException implements Exception {
+  const AdbCommandException(this.result);
 
-  Future<List<DeviceModel>> devices() async {
-    var output = await _exec(['devices']);
-    if (!output.contains('\tdevice')) {
-      await Future.delayed(const Duration(milliseconds: 800));
-      output = await _exec(['devices']);
-    }
-    final lines = LineSplitter().convert(output);
-    final devices = <DeviceModel>[];
+  final AdbCommandResult result;
 
-    for (int i = 1; i < lines.length; i++) {
-      final line = lines[i].trim();
-      if (line.isEmpty) continue;
-      final parts = line.split(RegExp(r'\s+'));
-      if (parts.length >= 2 && parts[1] == 'device') {
-        final deviceId = parts[0];
-        if (_deviceCache.containsKey(deviceId)) {
-          devices.add(_deviceCache[deviceId]!);
-          continue;
-        }
-        // Batch all getprop into one shell invocation with labeled output so
-        // parsing is order-independent and robust against ADB daemon messages
-        // or stray empty lines that would otherwise shift indices.
-        final propsOut = await _exec([
-          '-s', deviceId, 'shell',
-          'echo "sn:\$(getprop ro.serialno)"; '
-          'echo "mo:\$(getprop ro.product.model)"; '
-          'echo "mf:\$(getprop ro.product.manufacturer)"; '
-          'echo "av:\$(getprop ro.build.version.release)"; '
-          'echo "al:\$(getprop ro.build.version.sdk)"',
-        ]);
-        String tag(String t) {
-          for (final raw in LineSplitter().convert(propsOut)) {
-            final line = raw.trim();
-            if (line.startsWith('$t:')) return line.substring(t.length + 1);
-          }
-          return '';
-        }
-        final ipPort = _getIpPort(deviceId);
-        final model = DeviceModel(
-          deviceId: deviceId,
-          usb: ipPort.$1.isEmpty || ipPort.$2.isEmpty,
-          serialNumber:   tag('sn'),
-          model:          tag('mo'),
-          manufacturer:   tag('mf'),
-          androidVersion: tag('av'),
-          apiLevel:       tag('al'),
-          ip: ipPort.$1,
-          port: ipPort.$2,
+  @override
+  String toString() => result.toString();
+}
+
+abstract interface class AdbCommandRunner {
+  Future<AdbCommandResult> run(String executable, AdbCommandRequest request);
+}
+
+class ProcessAdbCommandRunner implements AdbCommandRunner {
+  ProcessAdbCommandRunner({Map<String, String>? parentEnvironment})
+      : _parentEnvironment = Map<String, String>.of(
+          parentEnvironment ?? Platform.environment,
         );
-        _deviceCache[deviceId] = model;
-        devices.add(model);
+
+  static const _maximumOutputCharacters = 64 * 1024;
+  final Map<String, String> _parentEnvironment;
+
+  Future<String> _collect(Stream<List<int>> source) async {
+    final output = StringBuffer();
+    var remaining = _maximumOutputCharacters;
+    await for (final text in source.transform(
+      const Utf8Decoder(allowMalformed: true),
+    )) {
+      if (remaining <= 0) continue;
+      final accepted =
+          text.length <= remaining ? text : text.substring(0, remaining);
+      output.write(accepted);
+      remaining -= accepted.length;
+    }
+    if (remaining <= 0) output.write('\n<output truncated>');
+    return output.toString();
+  }
+
+  @override
+  Future<AdbCommandResult> run(
+    String executable,
+    AdbCommandRequest request,
+  ) async {
+    final stopwatch = Stopwatch()..start();
+    Process process;
+    try {
+      process = await Process.start(
+        executable,
+        request.arguments,
+        environment: buildUsbOnlyAdbEnvironment(_parentEnvironment),
+        includeParentEnvironment: false,
+        runInShell: false,
+      );
+    } catch (error) {
+      stopwatch.stop();
+      return AdbCommandResult(
+        operation: request.operation,
+        executable: executable,
+        arguments: request.safeArguments,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        duration: stopwatch.elapsed,
+        timedOut: false,
+        spawnError: error,
+      );
+    }
+
+    final stdoutFuture = _collect(process.stdout);
+    final stderrFuture = _collect(process.stderr);
+    final exitFuture = process.exitCode;
+    var timedOut = false;
+    int? exitCode;
+    try {
+      exitCode = await exitFuture.timeout(request.timeout);
+    } on TimeoutException {
+      timedOut = true;
+      process.kill(ProcessSignal.sigkill);
+      try {
+        exitCode = await exitFuture.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        exitCode = null;
       }
     }
-    // Evict cache entries for devices no longer present.
-    _deviceCache.removeWhere((id, _) => !devices.any((d) => d.deviceId == id));
-    return devices;
+
+    final output = await Future.wait([
+      stdoutFuture.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => '<stdout stream did not close>',
+      ),
+      stderrFuture.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => '<stderr stream did not close>',
+      ),
+    ]);
+    stopwatch.stop();
+    return AdbCommandResult(
+      operation: request.operation,
+      executable: executable,
+      arguments: request.safeArguments,
+      exitCode: exitCode,
+      stdout: output[0],
+      stderr: output[1],
+      duration: stopwatch.elapsed,
+      timedOut: timedOut,
+    );
+  }
+}
+
+class AdbForwardSession {
+  const AdbForwardSession({
+    required this.deviceId,
+    required this.hostPort,
+    required this.socketName,
+    required this.generation,
+  });
+
+  final String deviceId;
+  final int hostPort;
+  final String socketName;
+  final int generation;
+}
+
+class AdbService {
+  AdbService({AdbCommandRunner? runner, String? adbPath})
+      : _runner = runner ?? ProcessAdbCommandRunner(),
+        _adbPath = adbPath ?? _defaultAdbPath();
+
+  final AdbCommandRunner _runner;
+  final String _adbPath;
+  final Map<String, DeviceModel> _deviceCache = {};
+  bool _disposed = false;
+  Process? _legacyLaunchProcess;
+  Process? _deviceTrackerProcess;
+
+  static String _defaultAdbPath() {
+    final executableDirectory = File(Platform.resolvedExecutable).parent.path;
+    final executableName = Platform.isWindows ? 'adb.exe' : 'adb';
+    return '$executableDirectory${Platform.pathSeparator}$executableName';
+  }
+
+  String get executablePath => _adbPath;
+
+  Future<AdbCommandResult> run(AdbCommandRequest request) async {
+    if (_disposed) {
+      throw StateError('ADB service has been disposed');
+    }
+    return _runner.run(_adbPath, request);
+  }
+
+  Future<AdbCommandResult> _required(AdbCommandRequest request) async {
+    final result = await run(request);
+    if (!result.succeeded) throw AdbCommandException(result);
+    return result;
+  }
+
+  Future<void> validateRuntime() async {
+    final executable = File(_adbPath);
+    if (!executable.existsSync()) {
+      throw StateError('Bundled ADB is missing: $_adbPath');
+    }
+    if (Platform.isWindows) {
+      final directory = executable.parent.path;
+      for (final name in ['AdbWinApi.dll', 'AdbWinUsbApi.dll']) {
+        final file = File('$directory${Platform.pathSeparator}$name');
+        if (!file.existsSync()) {
+          throw StateError('Bundled ADB dependency is missing: ${file.path}');
+        }
+      }
+    }
+    await _required(
+      const AdbCommandRequest(
+        operation: 'check ADB version',
+        arguments: ['version'],
+        timeout: Duration(seconds: 5),
+      ),
+    );
+  }
+
+  Future<List<DeviceModel>> devices() async {
+    final result = await _required(
+      const AdbCommandRequest(
+        operation: 'list ADB devices',
+        arguments: ['devices', '-l'],
+        timeout: Duration(seconds: 6),
+      ),
+    );
+    final parsed = <DeviceModel>[];
+    for (final raw in const LineSplitter().convert(result.stdout)) {
+      final line = raw.trim();
+      if (line.isEmpty ||
+          line.startsWith('List of devices') ||
+          line.startsWith('* daemon')) {
+        continue;
+      }
+      final parts = line.split(RegExp(r'\s+'));
+      if (parts.length < 2) continue;
+      final deviceId = parts[0];
+      final state = switch (parts[1]) {
+        'device' => AdbDeviceState.authorized,
+        'unauthorized' => AdbDeviceState.unauthorized,
+        'offline' => AdbDeviceState.offline,
+        _ => AdbDeviceState.unknown,
+      };
+      final attributes = <String, String>{};
+      for (final part in parts.skip(2)) {
+        final separator = part.indexOf(':');
+        if (separator > 0) {
+          attributes[part.substring(0, separator)] = part.substring(
+            separator + 1,
+          );
+        }
+      }
+      final transport = deviceId.startsWith('emulator-')
+          ? AdbTransportType.emulator
+          : attributes.containsKey('usb')
+              ? AdbTransportType.usb
+              : deviceId.contains(':')
+                  ? AdbTransportType.network
+                  : AdbTransportType.unknown;
+      final transportId = int.tryParse(attributes['transport_id'] ?? '');
+
+      DeviceModel? metadata;
+      if (state == AdbDeviceState.authorized &&
+          transport == AdbTransportType.usb) {
+        metadata = _deviceCache[deviceId];
+        metadata ??= await _loadMetadata(
+          deviceId,
+          transport,
+          transportId,
+          attributes,
+        );
+        _deviceCache[deviceId] = metadata;
+      }
+      final ipPort = _getIpPort(deviceId);
+      parsed.add(
+        metadata ??
+            DeviceModel(
+              deviceId: deviceId,
+              usb: transport == AdbTransportType.usb,
+              serialNumber: '',
+              model: attributes['model'] ?? '',
+              manufacturer: '',
+              androidVersion: '',
+              apiLevel: '',
+              ip: ipPort.$1,
+              port: ipPort.$2,
+              adbState: state,
+              transportType: transport,
+              transportId: transportId,
+            ),
+      );
+    }
+    final currentIds = parsed.map((device) => device.deviceId).toSet();
+    _deviceCache.removeWhere((id, _) => !currentIds.contains(id));
+    return parsed;
+  }
+
+  /// Emits whenever `adb track-devices` reports a new device snapshot.
+  ///
+  /// The tracker is only a wake-up signal. [devices] remains the single
+  /// structured parser and source of truth. If ADB exits or cannot start, the
+  /// tracker restarts after a bounded delay while the caller retains a slow
+  /// polling fallback.
+  Stream<void> deviceChanges() async* {
+    while (!_disposed) {
+      Process? tracker;
+      try {
+        tracker = await Process.start(
+          _adbPath,
+          const ['track-devices', '-l'],
+          environment: buildUsbOnlyAdbEnvironment(Platform.environment),
+          includeParentEnvironment: false,
+          runInShell: false,
+        );
+        if (_disposed) {
+          tracker.kill(ProcessSignal.sigkill);
+          return;
+        }
+        _deviceTrackerProcess = tracker;
+        unawaited(tracker.stderr.drain<void>());
+        await for (final chunk in tracker.stdout) {
+          if (_disposed) return;
+          if (chunk.isNotEmpty) yield null;
+        }
+        await tracker.exitCode;
+      } catch (_) {
+        // The periodic structured refresh reports actionable ADB failures.
+        // Tracking itself is only a latency optimization.
+      } finally {
+        if (identical(_deviceTrackerProcess, tracker)) {
+          _deviceTrackerProcess = null;
+        }
+        tracker?.kill(ProcessSignal.sigkill);
+      }
+      if (!_disposed) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+    }
+  }
+
+  Future<DeviceModel> _loadMetadata(
+    String deviceId,
+    AdbTransportType transport,
+    int? transportId,
+    Map<String, String> attributes,
+  ) async {
+    final result = await _required(
+      AdbCommandRequest(
+        operation: 'read Android device metadata',
+        arguments: [
+          '-s',
+          deviceId,
+          'shell',
+          'echo "sn:\$(getprop ro.serialno)"; '
+              'echo "mo:\$(getprop ro.product.model)"; '
+              'echo "mf:\$(getprop ro.product.manufacturer)"; '
+              'echo "av:\$(getprop ro.build.version.release)"; '
+              'echo "al:\$(getprop ro.build.version.sdk)"',
+        ],
+        timeout: const Duration(seconds: 6),
+      ),
+    );
+    String tag(String name) {
+      for (final raw in const LineSplitter().convert(result.stdout)) {
+        final line = raw.trim();
+        if (line.startsWith('$name:')) return line.substring(name.length + 1);
+      }
+      return '';
+    }
+
+    final ipPort = _getIpPort(deviceId);
+    return DeviceModel(
+      deviceId: deviceId,
+      usb: transport == AdbTransportType.usb,
+      serialNumber: tag('sn'),
+      model: tag('mo').isEmpty ? attributes['model'] ?? '' : tag('mo'),
+      manufacturer: tag('mf'),
+      androidVersion: tag('av'),
+      apiLevel: tag('al'),
+      ip: ipPort.$1,
+      port: ipPort.$2,
+      adbState: AdbDeviceState.authorized,
+      transportType: transport,
+      transportId: transportId,
+    );
   }
 
   (String, String) _getIpPort(String deviceId) {
-    final regex = RegExp(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})');
-    final match = regex.firstMatch(deviceId);
-    if (match != null) {
-      return (match.group(1)!, match.group(2)!);
+    final match =
+        RegExp(r'(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})').firstMatch(deviceId);
+    return match == null ? ('', '') : (match.group(1)!, match.group(2)!);
+  }
+
+  Future<CompanionInstallation?> findCompanion(String deviceId) async {
+    for (final installation in const [
+      CompanionInstallation.release,
+      CompanionInstallation.debug,
+    ]) {
+      final result = await run(
+        AdbCommandRequest(
+          operation: 'check Android companion',
+          arguments: [
+            '-s',
+            deviceId,
+            'shell',
+            'pm',
+            'path',
+            installation.packageName,
+          ],
+          timeout: const Duration(seconds: 6),
+        ),
+      );
+      if (result.succeeded && result.stdout.contains('package:')) {
+        return installation;
+      }
+      if (result.timedOut ||
+          result.spawnError != null ||
+          result.exitCode == null ||
+          result.exitCode != 0) {
+        throw AdbCommandException(result);
+      }
     }
-    return ('', '');
+    return null;
   }
 
-  Future<void> removeAllReverse(String deviceId) async {
-    await _exec(['-s', deviceId, 'reverse', '--remove-all']);
+  String? bundledCompanionApkPath() {
+    final executableDirectory = File(Platform.resolvedExecutable).parent.path;
+    final androidDirectory = Directory(
+      '$executableDirectory${Platform.pathSeparator}android',
+    );
+    for (final name in const [
+      'audioshare-companion.apk',
+      'audioshare-companion-poc-debug.apk',
+    ]) {
+      final candidate = File(
+        '${androidDirectory.path}${Platform.pathSeparator}$name',
+      );
+      if (candidate.existsSync()) return candidate.path;
+    }
+    return null;
   }
 
-  Future<void> reverse(String deviceId, String socketName, String port) async {
-    await _exec(['-s', deviceId, 'reverse', 'localabstract:$socketName', 'tcp:$port']);
+  Future<CompanionInstallation> installBundledCompanion(String deviceId) async {
+    final apkPath = bundledCompanionApkPath();
+    if (apkPath == null) {
+      throw StateError(
+        'No companion APK is included in this AudioShare build.',
+      );
+    }
+    final installResult = await _required(
+      AdbCommandRequest(
+        operation: 'install Android companion',
+        arguments: ['-s', deviceId, 'install', '-r', apkPath],
+        timeout: const Duration(minutes: 2),
+      ),
+    );
+    if (!installResult.stdout
+        .split(RegExp(r'\r?\n'))
+        .any((line) => line.trim() == 'Success')) {
+      throw AdbCommandException(
+        AdbCommandResult(
+          operation: installResult.operation,
+          executable: installResult.executable,
+          arguments: installResult.arguments,
+          exitCode: 1,
+          stdout: installResult.stdout,
+          stderr: installResult.stderr,
+          duration: installResult.duration,
+          timedOut: false,
+        ),
+      );
+    }
+    final installed = await findCompanion(deviceId);
+    if (installed == null) {
+      throw StateError(
+        'ADB reported a successful install, but the companion package '
+        'cannot be found on the device.',
+      );
+    }
+    return installed;
   }
 
-  Future<void> pushServer(String deviceId) async {
-    final exeDir = File(Platform.resolvedExecutable).parent.path;
-    // macOS: server APK lives in Contents/Resources/ to avoid codesign failures.
-    // Windows: server is placed next to the exe by CMakeLists.txt.
+  Future<void> launchCompanion({
+    required String deviceId,
+    required String socketName,
+    required String tokenHex,
+    required int generation,
+    required CompanionInstallation installation,
+  }) async {
+    final arguments = [
+      '-s',
+      deviceId,
+      'shell',
+      'am',
+      'start',
+      '-W',
+      '-n',
+      installation.activityComponent,
+      '-a',
+      _companionLaunchAction,
+      '--es',
+      'socket_name',
+      socketName,
+      '--es',
+      'token_hex',
+      tokenHex,
+      '--el',
+      'generation',
+      generation.toString(),
+    ];
+    final result = await _required(
+      AdbCommandRequest(
+        operation: 'launch Android companion',
+        arguments: arguments,
+        timeout: const Duration(seconds: 10),
+        sensitiveArgumentIndexes: {arguments.indexOf(tokenHex)},
+      ),
+    );
+    final combined = '${result.stdout}\n${result.stderr}';
+    if (combined.contains('Error:') ||
+        combined.contains('Error type') ||
+        combined.contains('Exception')) {
+      throw AdbCommandException(
+        AdbCommandResult(
+          operation: result.operation,
+          executable: result.executable,
+          arguments: result.arguments,
+          exitCode: 1,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          duration: result.duration,
+          timedOut: false,
+        ),
+      );
+    }
+  }
+
+  Future<AdbForwardSession> createForward({
+    required String deviceId,
+    required String socketName,
+    required int generation,
+  }) async {
+    final result = await _required(
+      AdbCommandRequest(
+        operation: 'create ADB USB audio forward',
+        arguments: [
+          '-s',
+          deviceId,
+          'forward',
+          '--no-rebind',
+          'tcp:0',
+          'localabstract:$socketName',
+        ],
+        timeout: const Duration(seconds: 8),
+      ),
+    );
+    final port = RegExp(r'^\s*(\d{1,5})\s*$', multiLine: true)
+        .allMatches(result.stdout)
+        .map((match) => int.tryParse(match.group(1)!))
+        .whereType<int>()
+        .lastOrNull;
+    if (port == null || port < 1 || port > 65535) {
+      throw FormatException(
+        'ADB did not return a valid forwarded port: ${result.stdout.trim()}',
+      );
+    }
+    return AdbForwardSession(
+      deviceId: deviceId,
+      hostPort: port,
+      socketName: socketName,
+      generation: generation,
+    );
+  }
+
+  Future<void> removeForward(AdbForwardSession session) async {
+    final result = await run(
+      AdbCommandRequest(
+        operation: 'remove owned ADB USB audio forward',
+        arguments: [
+          '-s',
+          session.deviceId,
+          'forward',
+          '--remove',
+          'tcp:${session.hostPort}',
+        ],
+        timeout: const Duration(seconds: 6),
+      ),
+    );
+    final cleanupError = result.stderr.toLowerCase();
+    final alreadyGone = cleanupError.contains('device not found') ||
+        (cleanupError.contains('listener') &&
+            cleanupError.contains('not found'));
+    if (!result.succeeded && !alreadyGone) {
+      throw AdbCommandException(result);
+    }
+  }
+
+  // Legacy app_process operations remain isolated for macOS compatibility.
+  Future<void> reverse(String deviceId, String socketName, int port) async {
+    await _required(
+      AdbCommandRequest(
+        operation: 'create legacy ADB reverse',
+        arguments: [
+          '-s',
+          deviceId,
+          'reverse',
+          'localabstract:$socketName',
+          'tcp:$port',
+        ],
+      ),
+    );
+  }
+
+  Future<void> removeReverse(String deviceId, String socketName) async {
+    final result = await run(
+      AdbCommandRequest(
+        operation: 'remove owned legacy ADB reverse',
+        arguments: [
+          '-s',
+          deviceId,
+          'reverse',
+          '--remove',
+          'localabstract:$socketName',
+        ],
+      ),
+    );
+    if (!result.succeeded && !result.stderr.contains('device not found')) {
+      throw AdbCommandException(result);
+    }
+  }
+
+  Future<void> pushLegacyServer(String deviceId) async {
+    final executableDirectory = File(Platform.resolvedExecutable).parent.path;
     final serverPath = Platform.isMacOS
-        ? '$exeDir/../Resources/server'
-        : '$exeDir${Platform.pathSeparator}server';
-    await _exec(['-s', deviceId, 'push', serverPath, '/data/local/tmp/audioshare']);
+        ? '$executableDirectory/../Resources/server'
+        : '$executableDirectory${Platform.pathSeparator}server';
+    await _required(
+      AdbCommandRequest(
+        operation: 'push legacy Android receiver',
+        arguments: [
+          '-s',
+          deviceId,
+          'push',
+          serverPath,
+          '/data/local/tmp/audioshare',
+        ],
+        timeout: const Duration(seconds: 20),
+      ),
+    );
   }
 
-  Future<void> launchServer(String deviceId, String socketName) async {
-    stopServer();
-    _launchProcess = await Process.start(_adbPath, [
-      '-s', deviceId, 'shell', 'app_process',
+  Future<void> launchLegacyServer(String deviceId, String socketName) async {
+    stopLegacyServer();
+    _legacyLaunchProcess = await Process.start(_adbPath, [
+      '-s',
+      deviceId,
+      'shell',
+      'app_process',
       '-Djava.class.path=/data/local/tmp/audioshare',
       '/data/local/tmp',
       'com.ysbing.audioshare.Main',
       'socketName=$socketName',
       'connectCode=$deviceId',
     ]);
-    _launchProcess!.stdout.transform(utf8.decoder).listen((_) {});
-    _launchProcess!.stderr.transform(utf8.decoder).listen((_) {});
+    _legacyLaunchProcess!.stdout.drain<void>();
+    _legacyLaunchProcess!.stderr.drain<void>();
   }
 
-  void stopServer() {
-    if (_launchProcess != null) {
-      _launchProcess!.kill(ProcessSignal.sigkill);
-      _launchProcess = null;
-    }
+  void stopLegacyServer() {
+    _legacyLaunchProcess?.kill(ProcessSignal.sigkill);
+    _legacyLaunchProcess = null;
   }
 
   void dispose() {
-    stopServer();
-    // ADB daemon runs from temp dir and intentionally persists between restarts.
-    // No kill-server needed.
+    _disposed = true;
+    _deviceTrackerProcess?.kill(ProcessSignal.sigkill);
+    _deviceTrackerProcess = null;
+    stopLegacyServer();
+    _deviceCache.clear();
   }
 }

@@ -30,6 +30,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String get disconnect => '断开';
 
   @override
+  String get installCompanion => '安装配套应用';
+
+  @override
+  String get installingCompanion => '正在安装';
+
+  @override
+  String get usbUnauthorized => '请解锁手机并允许 USB 调试。';
+
+  @override
+  String get usbOffline => 'USB 设备离线。请重新连接数据线。';
+
+  @override
+  String get ignoredAdbDevice => '已忽略：请通过 USB 连接此设备。';
+
+  @override
+  String get streamingAllSystemAudio => '正在传输全部 Windows 系统音频';
+
+  @override
+  String get phaseCheckingAdb => '正在检查 USB 和 ADB';
+
+  @override
+  String get phaseCheckingCompanion => '正在检查 Android 配套应用';
+
+  @override
+  String get phaseCreatingForward => '正在创建 USB 传输';
+
+  @override
+  String get phaseStartingCompanion => '正在启动 Android 配套应用';
+
+  @override
+  String get phaseConnectingTransport => '正在通过 USB 连接';
+
+  @override
+  String get phaseHandshaking => '正在验证会话';
+
+  @override
+  String get phaseInitializingCapture => '正在启动系统音频捕获';
+
+  @override
   String get autoConnectLastDevice => '自动连接上次使用的设备';
 
   @override

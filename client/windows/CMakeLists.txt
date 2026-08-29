@@ -98,8 +98,45 @@ install(TARGETS audio_capture RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 
 # Install bundled ADB utilities
 set(ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../assets")
-install(FILES "${ASSETS_DIR}/adb.exe" "${ASSETS_DIR}/AdbWinApi.dll" "${ASSETS_DIR}/AdbWinUsbApi.dll" "${ASSETS_DIR}/server"
+install(FILES "${ASSETS_DIR}/adb.exe" "${ASSETS_DIR}/AdbWinApi.dll" "${ASSETS_DIR}/AdbWinUsbApi.dll"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+install(FILES "${ASSETS_DIR}/platform-tools-NOTICE.txt"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  RENAME "THIRD_PARTY_NOTICES_ADB.txt"
+  COMPONENT Runtime)
+
+# A release bundle must point this at a signed release APK. The checked-in
+# debug APK is installed only for local Debug POC builds and is never silently
+# promoted into Profile/Release distributions.
+if(DEFINED ENV{AUDIOSHARE_COMPANION_APK} AND
+    NOT "$ENV{AUDIOSHARE_COMPANION_APK}" STREQUAL "")
+  set(AUDIOSHARE_COMPANION_APK "$ENV{AUDIOSHARE_COMPANION_APK}" CACHE FILEPATH
+    "Signed AudioShare Android companion APK for distribution" FORCE)
+else()
+  set(AUDIOSHARE_COMPANION_APK "" CACHE FILEPATH
+    "Signed AudioShare Android companion APK for distribution")
+endif()
+if(AUDIOSHARE_COMPANION_APK)
+  if(NOT EXISTS "${AUDIOSHARE_COMPANION_APK}")
+    message(FATAL_ERROR "AUDIOSHARE_COMPANION_APK does not exist")
+  endif()
+  install(FILES "${AUDIOSHARE_COMPANION_APK}"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/android"
+    RENAME "audioshare-companion.apk"
+    COMPONENT Runtime)
+else()
+  install(CODE "
+    if(\"\${CMAKE_INSTALL_CONFIG_NAME}\" STREQUAL \"Release\" OR
+       \"\${CMAKE_INSTALL_CONFIG_NAME}\" STREQUAL \"Profile\")
+      message(FATAL_ERROR
+        \"Release/Profile packaging requires AUDIOSHARE_COMPANION_APK to point to a signed APK\")
+    endif()
+  " COMPONENT Runtime)
+endif()
+install(FILES "${ASSETS_DIR}/android/audioshare-companion-poc-debug.apk"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/android"
+  CONFIGURATIONS Debug
   COMPONENT Runtime)
 
 # Copy the native assets provided by the build.dart from all packages.

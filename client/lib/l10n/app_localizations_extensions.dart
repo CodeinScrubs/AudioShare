@@ -4,7 +4,8 @@ import 'generated/app_localizations.dart';
 
 /// Locale-aware presentation helpers for values supplied by devices and APIs.
 extension AppLocalizationsFormatting on AppLocalizations {
-  String formatNumber(num value) => NumberFormat.decimalPattern(localeName).format(value);
+  String formatNumber(num value) =>
+      NumberFormat.decimalPattern(localeName).format(value);
 
   String formatDateTime(DateTime value) =>
       DateFormat.yMMMd(localeName).add_jm().format(value);
@@ -15,7 +16,8 @@ extension AppLocalizationsFormatting on AppLocalizations {
   String deviceNetworkAddressFormatted(String ip, int port) =>
       deviceNetworkAddress(ip, formatNumber(port));
 
-  String nativeErrorDetailsFormatted(int code) => nativeErrorDetails(formatNumber(code));
+  String nativeErrorDetailsFormatted(int code) =>
+      nativeErrorDetails(formatNumber(code));
 
   String nativeErrorDescription(int code) => switch (code) {
         1000 => nativeError1000,
