@@ -50,11 +50,25 @@ listener:   127.0.0.1:5037
 The server was already running and was not killed, restarted, or replaced. A
 read-only `adb devices -l` query returned no attached devices.
 
+### Unusable emulator entries observed later
+
+After the production-slice commit, ADB briefly listed three emulator serials in
+state `host`, not the required state `device`. A read-only `shell getprop` probe
+against one such entry returned a protocol reset; the shared ADB server exited
+and ADB automatically restarted it from the fork's bundled platform-tools 37.0.1
+binary. No `kill-server` command was issued. No APK was installed, no forward was
+created, and no emulator state was intentionally changed. The stale entries then
+disappeared and `adb devices -l` was empty.
+
+This is not integration evidence. It also reinforces the production rule that
+only state `device` plus a positively identified USB transport is eligible for
+metadata, package, launch, or forwarding commands.
+
 ### Blocked checks
 
 The following require a physical authorized Android device and remain NOT RUN:
 
-- app_process creation of `LocalServerSocket`;
+- installed companion creation of `LocalServerSocket`;
 - `forward --no-rebind tcp:0 localabstract:<nonce>` port allocation;
 - outbound connection to the allocated `127.0.0.1` port;
 - handshake and random binary integrity;
