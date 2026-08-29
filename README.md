@@ -5,15 +5,17 @@ connection. This fork is being specialized for a portable, standard-user,
 firewall-independent Windows workflow.
 
 Development status: the Android companion builds and its unit/lint checks pass;
-the Windows native transport compiles and its protocol tests pass. Physical USB,
-phone playback, firewall-prompt, latency, and long-run tests are still required
-before this fork is release-ready. See [POC results](docs/POC_RESULTS.md).
+the Windows global-capture path compiles and passed a local native integration
+test with non-zero PCM. Physical USB, phone playback, firewall-prompt, latency,
+and long-run tests are still required before this fork is release-ready. See
+[POC results](docs/POC_RESULTS.md).
 
 ## Architecture
 
 ```text
-all Windows applications and system sounds
-                -> WASAPI loopback
+all ordinary Windows applications and system sounds
+                -> global process loopback (preferred)
+                -> default-output loopback (compatibility fallback)
                 -> 48 kHz stereo PCM16
                 -> outbound 127.0.0.1 connection
                 -> ADB forward over USB
@@ -26,6 +28,14 @@ The Windows program creates no listening audio socket. Automatic mode rejects
 Wi-Fi ADB and emulators. The Android companion declares no `INTERNET` permission.
 No virtual audio driver, firewall rule, LAN, Wi-Fi, Internet, installer, Windows
 service, or administrator elevation is intentionally required at runtime.
+
+On supported Windows builds, AudioShare uses Microsoft's virtual process-loopback
+device in exclude mode: it captures the global system mix except AudioShare's own
+process tree, independent of physical render endpoint. If that feature probe
+fails, it falls back to event-driven loopback of the default Windows output. The
+UI identifies which mode is active. A true multi-endpoint aggregator for older
+Windows remains planned; compatibility mode does not claim to capture apps
+explicitly routed to a different output endpoint.
 
 ## First time only
 
@@ -85,6 +95,19 @@ Additional native protocol check:
 
 ```powershell
 g++ -std=c++17 -Wall -Wextra -Werror client/native/wire_protocol_test.cpp
+```
+
+The native system-capture integration harness uses a fake local companion. It
+verifies activation, handshake, 48 kHz PCM flow, and non-zero signal without an
+Android device; the fake listener exists only inside the test executable:
+
+```powershell
+g++ -std=c++17 -Wall -Wextra -Werror -shared client/native/audio_capture.cpp `
+  -o audio_capture.dll -lmmdevapi -lole32 -lws2_32 -lwinmm -luuid
+g++ -std=c++17 -Wall -Wextra -Werror `
+  client/native/system_capture_integration_test.cpp `
+  -o system_capture_integration_test.exe -lws2_32
+.\system_capture_integration_test.exe --require-signal
 ```
 
 ## Documentation

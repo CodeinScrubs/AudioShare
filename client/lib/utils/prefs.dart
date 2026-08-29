@@ -5,16 +5,7 @@ class Prefs {
   static Map<String, dynamic> _cache = {};
 
   static File _file() {
-    String base;
-    if (Platform.isWindows) {
-      base = Platform.environment['APPDATA'] ?? Directory.systemTemp.path;
-    } else if (Platform.isMacOS) {
-      final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
-      base = '$home/Library/Application Support';
-    } else {
-      final home = Platform.environment['HOME'] ?? Directory.systemTemp.path;
-      base = '$home/.config';
-    }
+    final base = Platform.environment['APPDATA'] ?? Directory.systemTemp.path;
     final sep = Platform.pathSeparator;
     final dir = Directory('$base${sep}ysbing${sep}AudioShare');
     if (!dir.existsSync()) dir.createSync(recursive: true);

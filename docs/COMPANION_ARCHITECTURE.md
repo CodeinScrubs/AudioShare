@@ -10,10 +10,11 @@ AudioShare becomes a two-part product:
 1. a portable standard-user Windows host; and
 2. an installed native Android companion.
 
-The user's explicit capture requirement overrides stale `idplayer.exe` language
-in external review briefs: the Windows host captures **System Audio (All Apps)**
-from the selected/default Windows render endpoint. It does not filter by process
-and does not depend on Application Loopback or Windows build 20348.
+The user's explicit capture requirement overrides stale `idplayer.exe` language:
+the Windows host captures **System Audio (All Apps)**. On supported Windows it
+uses Application Process Loopback in exclude mode, targeting AudioShare's own
+process tree so every other ordinary render stream is included. Activation is
+feature-probed rather than selected from a version string.
 
 After one-time APK installation, USB-debugging enablement, and PC authorization,
 the daily target is: log in, host runs in the tray, connect the remembered phone,
@@ -22,9 +23,11 @@ and system audio starts without opening either UI or entering an IP address.
 ## Selected topology
 
 ```text
-all applications + Windows sounds on selected render endpoint
+all ordinary applications + Windows sounds
                          |
-             event-driven WASAPI loopback
+       global process loopback (preferred)
+                         |
+        default-endpoint loopback (fallback)
                          |
           validated format conversion to 48k stereo PCM16
                          |
@@ -111,17 +114,20 @@ The host retains the reliability design from `LOCKED_DOWN_WINDOWS_DESIGN.md`:
 - USB-only device classification and sanitized ADB child environments;
 - no `remove-all`, `kill-server`, wireless ADB workflow, or ambient-server
   disruption;
-- event-driven shared-mode endpoint loopback with all COM/WASAPI lifetime on
-  the capture thread;
+- endpoint-independent global process loopback where Windows accepts it, with
+  event-driven default-endpoint loopback as the compatibility fallback;
+- all COM/WASAPI and asynchronous activation lifetime on the capture thread;
 - canonical 48 kHz stereo PCM16 requested through Windows shared-mode engine
   conversion;
 - a bounded capture-to-transport queue with live-edge policy; and
 - explicit transport, capture, signal, and playback states.
 
-The current implementation follows the Windows default console render endpoint.
-Manual endpoint selection and endpoint-change recovery are still planned.
-Simultaneous multi-endpoint mixing is not promised because endpoints have
-independent clocks and may contain duplicate audio.
+The global path excludes the host's own process tree and is not tied to a
+physical endpoint. The active mode and global feature-probe HRESULT are exposed
+through FFI diagnostics. On older/incompatible Windows, the current fallback
+follows the default console render endpoint. A multi-endpoint legacy aggregator,
+endpoint-change recovery, duplicate-stream handling, and independent-clock drift
+control are still planned and must be measured rather than claimed complete.
 
 ## Evidence gate
 

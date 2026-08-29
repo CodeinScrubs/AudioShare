@@ -1,5 +1,5 @@
 name: audioshare
-description: Stream system audio (Windows/macOS) to Android via ADB.
+description: Stream Windows system audio to Android over USB ADB.
 publish_to: none
 
 version: 2.1.1+1

@@ -5,6 +5,37 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <mmreg.h>
+#include <propidl.h>
+
+#if __has_include(<audioclientactivationparams.h>)
+#include <audioclientactivationparams.h>
+#else
+// MinGW does not currently ship audioclientactivationparams.h. These are the
+// public Windows SDK ABI declarations used by ActivateAudioInterfaceAsync.
+typedef enum AUDIOCLIENT_ACTIVATION_TYPE {
+    AUDIOCLIENT_ACTIVATION_TYPE_DEFAULT,
+    AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
+} AUDIOCLIENT_ACTIVATION_TYPE;
+
+typedef enum PROCESS_LOOPBACK_MODE {
+    PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
+    PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE,
+} PROCESS_LOOPBACK_MODE;
+
+typedef struct AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
+    DWORD TargetProcessId;
+    PROCESS_LOOPBACK_MODE ProcessLoopbackMode;
+} AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS;
+
+typedef struct AUDIOCLIENT_ACTIVATION_PARAMS {
+    AUDIOCLIENT_ACTIVATION_TYPE ActivationType;
+    union {
+        AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS ProcessLoopbackParams;
+    };
+} AUDIOCLIENT_ACTIVATION_PARAMS;
+
+#define VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK L"VAD\\Process_Loopback"
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -13,6 +44,7 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -28,6 +60,13 @@ constexpr size_t kMaxQueuedChunks = 8;
 constexpr uint32_t kSampleRate = 48000;
 constexpr uint16_t kChannels = 2;
 constexpr uint16_t kBitsPerSample = 16;
+constexpr DWORD kActivationTimeoutMilliseconds = 5000;
+
+enum class CaptureMode : uint32_t {
+    kNone = 0,
+    kGlobalProcessLoopback = 1,
+    kDefaultEndpointLoopback = 2,
+};
 
 using ConnectCallback = void (*)(const char* status);
 using namespace audioshare::wire;
@@ -41,6 +80,8 @@ std::atomic<uint64_t> g_androidReceivedFrames{0};
 std::atomic<uint64_t> g_androidDroppedFrames{0};
 std::atomic<uint32_t> g_androidQueueDepth{0};
 std::atomic<uint32_t> g_androidBufferFrames{0};
+std::atomic<uint32_t> g_captureMode{static_cast<uint32_t>(CaptureMode::kNone)};
+std::atomic<long> g_globalLoopbackHresult{S_OK};
 std::atomic<SOCKET> g_transportSocket{INVALID_SOCKET};
 
 HANDLE g_transportThread = nullptr;
@@ -187,6 +228,164 @@ bool ReapThread(HANDLE* thread, DWORD timeoutMilliseconds) {
     CloseHandle(*thread);
     *thread = nullptr;
     return true;
+}
+
+#if !defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT)
+class ActivationCompletionHandler final
+    : public IActivateAudioInterfaceCompletionHandler {
+public:
+    ActivationCompletionHandler()
+        : completedEvent_(CreateEvent(nullptr, TRUE, FALSE, nullptr)) {}
+
+    bool IsValid() const { return completedEvent_ != nullptr; }
+
+    HRESULT WaitForClient(IAudioClient** audioClient) {
+        if (audioClient == nullptr) return E_POINTER;
+        *audioClient = nullptr;
+        if (completedEvent_ == nullptr) return HRESULT_FROM_WIN32(GetLastError());
+
+        HANDLE waitHandles[2] = {g_stopEvent, completedEvent_};
+        const DWORD waitResult = WaitForMultipleObjects(
+            2, waitHandles, FALSE, kActivationTimeoutMilliseconds);
+        if (waitResult == WAIT_OBJECT_0) {
+            return HRESULT_FROM_WIN32(ERROR_CANCELLED);
+        }
+        if (waitResult == WAIT_TIMEOUT) {
+            return HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+        }
+        if (waitResult != WAIT_OBJECT_0 + 1) {
+            return HRESULT_FROM_WIN32(GetLastError());
+        }
+        std::lock_guard<std::mutex> lock(resultMutex_);
+        if (FAILED(activationResult_)) return activationResult_;
+        if (audioClient_ == nullptr) return E_NOINTERFACE;
+        *audioClient = audioClient_;
+        audioClient_ = nullptr;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
+        if (object == nullptr) return E_POINTER;
+        *object = nullptr;
+        if (IsEqualIID(iid, IID_IUnknown) ||
+            IsEqualIID(iid, __uuidof(IActivateAudioInterfaceCompletionHandler)) ||
+            IsEqualIID(iid, IID_IAgileObject)) {
+            *object = static_cast<IActivateAudioInterfaceCompletionHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() override {
+        return references_.fetch_add(1) + 1;
+    }
+
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = references_.fetch_sub(1) - 1;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+
+    HRESULT STDMETHODCALLTYPE ActivateCompleted(
+        IActivateAudioInterfaceAsyncOperation* operation) override {
+        HRESULT activationResult = E_UNEXPECTED;
+        IUnknown* activatedInterface = nullptr;
+        HRESULT result = operation == nullptr
+            ? E_POINTER
+            : operation->GetActivateResult(&activationResult, &activatedInterface);
+        if (SUCCEEDED(result)) result = activationResult;
+        if (SUCCEEDED(result) && activatedInterface != nullptr) {
+            IAudioClient* audioClient = nullptr;
+            result = activatedInterface->QueryInterface(
+                __uuidof(IAudioClient), reinterpret_cast<void**>(&audioClient));
+            if (SUCCEEDED(result)) {
+                std::lock_guard<std::mutex> lock(resultMutex_);
+                audioClient_ = audioClient;
+            }
+        }
+        if (activatedInterface != nullptr) activatedInterface->Release();
+        {
+            std::lock_guard<std::mutex> lock(resultMutex_);
+            activationResult_ = result;
+        }
+        SetEvent(completedEvent_);
+        // Balance the callback-lifetime reference taken before activation.
+        Release();
+        return S_OK;
+    }
+
+private:
+    ~ActivationCompletionHandler() {
+        if (audioClient_ != nullptr) audioClient_->Release();
+        if (completedEvent_ != nullptr) CloseHandle(completedEvent_);
+    }
+
+    std::atomic<ULONG> references_{1};
+    HANDLE completedEvent_ = nullptr;
+    std::mutex resultMutex_;
+    HRESULT activationResult_ = E_PENDING;
+    IAudioClient* audioClient_ = nullptr;
+};
+
+HRESULT ActivateGlobalProcessLoopback(IAudioClient** audioClient) {
+    if (audioClient == nullptr) return E_POINTER;
+    *audioClient = nullptr;
+
+    AUDIOCLIENT_ACTIVATION_PARAMS audioParams{};
+    audioParams.ActivationType = AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK;
+    audioParams.ProcessLoopbackParams.TargetProcessId = GetCurrentProcessId();
+    audioParams.ProcessLoopbackParams.ProcessLoopbackMode =
+        PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE;
+
+    PROPVARIANT activationParams{};
+    activationParams.vt = VT_BLOB;
+    activationParams.blob.cbSize = sizeof(audioParams);
+    activationParams.blob.pBlobData = reinterpret_cast<BYTE*>(&audioParams);
+
+    auto* handler = new (std::nothrow) ActivationCompletionHandler();
+    if (handler == nullptr) return E_OUTOFMEMORY;
+    if (!handler->IsValid()) {
+        handler->Release();
+        return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
+    }
+
+    IActivateAudioInterfaceAsyncOperation* operation = nullptr;
+    // Keep the handler alive even if stop/timeout releases the operation before
+    // Windows invokes the asynchronous completion callback.
+    handler->AddRef();
+    HRESULT result = ActivateAudioInterfaceAsync(
+        VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
+        __uuidof(IAudioClient),
+        &activationParams,
+        handler,
+        &operation);
+    if (FAILED(result)) handler->Release();
+    if (SUCCEEDED(result)) result = handler->WaitForClient(audioClient);
+    if (operation != nullptr) operation->Release();
+    handler->Release();
+    return result;
+}
+#endif
+
+void FillCanonicalFormat(WAVEFORMATEX* format) {
+    *format = {};
+    format->wFormatTag = WAVE_FORMAT_PCM;
+    format->nChannels = kChannels;
+    format->nSamplesPerSec = kSampleRate;
+    format->wBitsPerSample = kBitsPerSample;
+    format->nBlockAlign = kChannels * (kBitsPerSample / 8);
+    format->nAvgBytesPerSec = kSampleRate * format->nBlockAlign;
+}
+
+HRESULT InitializeCanonicalLoopback(IAudioClient* audioClient,
+                                    const WAVEFORMATEX* format) {
+    const DWORD streamFlags = AUDCLNT_STREAMFLAGS_LOOPBACK |
+        AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
+        AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+        AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+    return audioClient->Initialize(
+        AUDCLNT_SHAREMODE_SHARED, streamFlags, 0, 0, format, nullptr);
 }
 
 SOCKET ConnectLoopback(int port) {
@@ -343,33 +542,79 @@ DWORD WINAPI CaptureThread(LPVOID) {
     HANDLE captureEvent = nullptr;
     bool audioStarted = false;
     DWORD exitCode = 1;
+    HRESULT globalResult = E_NOTIMPL;
 
     do {
-        result = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-            __uuidof(IMMDeviceEnumerator), reinterpret_cast<void**>(&enumerator));
-        if (FAILED(result)) { SetError(2201, HresultMessage("Create audio device enumerator", result)); break; }
-        result = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
-        if (FAILED(result)) { SetError(2202, HresultMessage("Get default render endpoint", result)); break; }
-        result = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
-            reinterpret_cast<void**>(&audioClient));
-        if (FAILED(result)) { SetError(2203, HresultMessage("Activate WASAPI client", result)); break; }
-
         WAVEFORMATEX format{};
-        format.wFormatTag = WAVE_FORMAT_PCM;
-        format.nChannels = kChannels;
-        format.nSamplesPerSec = kSampleRate;
-        format.wBitsPerSample = kBitsPerSample;
-        format.nBlockAlign = kChannels * (kBitsPerSample / 8);
-        format.nAvgBytesPerSec = kSampleRate * format.nBlockAlign;
-        format.cbSize = 0;
+        FillCanonicalFormat(&format);
 
-        const DWORD streamFlags = AUDCLNT_STREAMFLAGS_LOOPBACK |
-            AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
-            AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
-            AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
-        result = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, 0, 0,
-            &format, nullptr);
-        if (FAILED(result)) { SetError(2204, HresultMessage("Initialize 48 kHz system loopback", result)); break; }
+        // Preferred mode: Windows' endpoint-independent process loopback,
+        // excluding this host process tree. Activation is the feature probe;
+        // version strings are intentionally not used as a gate.
+#if defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT)
+        globalResult = E_NOTIMPL;
+#else
+        globalResult = ActivateGlobalProcessLoopback(&audioClient);
+#endif
+        if (SUCCEEDED(globalResult)) {
+            globalResult = InitializeCanonicalLoopback(audioClient, &format);
+        }
+        g_globalLoopbackHresult.store(globalResult);
+        if (SUCCEEDED(globalResult)) {
+            g_captureMode.store(
+                static_cast<uint32_t>(CaptureMode::kGlobalProcessLoopback));
+        } else {
+            if (!g_captureRunning.load()) {
+                exitCode = 0;
+                break;
+            }
+            if (audioClient != nullptr) {
+                audioClient->Release();
+                audioClient = nullptr;
+            }
+
+            // Compatibility mode for Windows builds/drivers without global
+            // process loopback. This still captures every normal stream routed
+            // through the current default render endpoint.
+            result = CoCreateInstance(
+                __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                __uuidof(IMMDeviceEnumerator),
+                reinterpret_cast<void**>(&enumerator));
+            if (FAILED(result)) {
+                SetError(2201, HresultMessage(
+                    "Create default audio device enumerator", result));
+                break;
+            }
+            result = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+            if (FAILED(result)) {
+                SetError(2202, HresultMessage(
+                    "Get default Windows render endpoint", result));
+                break;
+            }
+            result = device->Activate(
+                __uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                reinterpret_cast<void**>(&audioClient));
+            if (FAILED(result)) {
+                SetError(2203, HresultMessage(
+                    "Activate default-endpoint WASAPI client", result));
+                break;
+            }
+            result = InitializeCanonicalLoopback(audioClient, &format);
+            if (FAILED(result)) {
+                std::string message = HresultMessage(
+                    "Initialize 48 kHz default-endpoint loopback", result);
+                message += "; global process loopback was unavailable (HRESULT 0x";
+                char globalCode[16]{};
+                _snprintf_s(globalCode, sizeof(globalCode), _TRUNCATE, "%08lX",
+                    static_cast<unsigned long>(globalResult));
+                message += globalCode;
+                message += ")";
+                SetError(2204, message);
+                break;
+            }
+            g_captureMode.store(
+                static_cast<uint32_t>(CaptureMode::kDefaultEndpointLoopback));
+        }
 
         captureEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         if (captureEvent == nullptr) { SetError(2205, "Could not create the WASAPI capture event"); break; }
@@ -421,6 +666,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
     if (captureEvent != nullptr) CloseHandle(captureEvent);
     if (comInitialized) CoUninitialize();
     g_captureRunning.store(false);
+    g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
     return exitCode;
 }
 
@@ -460,6 +706,8 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
     g_androidDroppedFrames.store(0);
     g_androidQueueDepth.store(0);
     g_androidBufferFrames.store(0);
+    g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
+    g_globalLoopbackHresult.store(S_OK);
     g_connected.store(false);
     if (g_stopEvent != nullptr) ResetEvent(g_stopEvent);
     {
@@ -504,6 +752,7 @@ extern "C" __declspec(dllexport) int AudioCapture_Start() {
 
 extern "C" __declspec(dllexport) void AudioCapture_Stop() {
     g_captureRunning.store(false);
+    g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
     g_transportRunning.store(false);
     g_connected.store(false);
     if (g_stopEvent != nullptr) SetEvent(g_stopEvent);
@@ -564,4 +813,12 @@ extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidQueueDepth(
 
 extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidBufferFrames() {
     return static_cast<unsigned int>(g_androidBufferFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetCaptureMode() {
+    return static_cast<unsigned int>(g_captureMode.load());
+}
+
+extern "C" __declspec(dllexport) long AudioCapture_GetGlobalLoopbackHresult() {
+    return g_globalLoopbackHresult.load();
 }

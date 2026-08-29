@@ -21,23 +21,10 @@ extension AppLocalizationsFormatting on AppLocalizations {
 
   String nativeErrorDescription(int code) => switch (code) {
         1000 => nativeError1000,
-        1001 => nativeError1001,
-        1002 => nativeError1002,
-        1100 => nativeError1100,
-        1101 => nativeError1101,
-        1102 => nativeError1102,
-        1103 => nativeError1103,
-        1104 => nativeError1104,
-        1105 => nativeError1105,
-        1106 => nativeError1106,
-        1107 => nativeError1107,
         1200 => nativeError1200,
-        1201 => nativeError1201,
-        1202 => nativeError1202,
-        1203 => nativeError1203,
-        1204 => nativeError1204,
-        1205 => nativeError1205,
-        1206 => nativeError1206,
+        _ when code >= 2000 && code < 2100 => nativeErrorHost,
+        _ when code >= 2100 && code < 2200 => nativeErrorTransport,
+        _ when code >= 2200 && code < 2300 => nativeErrorWindowsCapture,
         _ => nativeErrorUnknown,
       };
 }

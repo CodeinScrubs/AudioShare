@@ -15,9 +15,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ok => 'OK';
 
   @override
-  String get openSystemSettings => 'Open System Settings';
-
-  @override
   String get noDevices => 'No devices found';
 
   @override
@@ -46,6 +43,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get streamingAllSystemAudio => 'Streaming all Windows system audio';
+
+  @override
+  String get streamingGlobalSystemAudio =>
+      'Streaming all Windows audio (global mode)';
+
+  @override
+  String get streamingDefaultOutputAudio =>
+      'Streaming Windows default output (compatibility mode)';
 
   @override
   String get phaseCheckingAdb => 'Checking USB and ADB';
@@ -92,13 +97,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get recordingPermissionTitle => 'Recording permission required';
-
-  @override
-  String get recordingPermissionDescription =>
-      'In System Settings, go to Privacy & Security > Screen & System Audio Recording and allow AudioShare. macOS requires the app to restart before the new permission takes effect; quit and reopen AudioShare, then connect again.';
-
-  @override
   String get connectionFailedTitle => 'Connection failed';
 
   @override
@@ -110,13 +108,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get captureStartFailed => 'System audio capture could not be started.';
-
-  @override
-  String get listenerStartFailed =>
-      'The local audio streaming service could not be started.';
-
-  @override
-  String get noAvailablePort => 'No local listening port is available.';
 
   @override
   String get connectAndroidDeviceFailed =>
@@ -135,68 +126,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nativeError1000 => 'Audio capture initialization failed.';
 
   @override
-  String get nativeError1001 =>
-      'This macOS version does not support system audio capture.';
-
-  @override
-  String get nativeError1002 =>
-      'Screen and system audio recording permission is unavailable.';
-
-  @override
-  String get nativeError1100 =>
-      'The local audio listener could not be started.';
-
-  @override
-  String get nativeError1101 =>
-      'The local listening socket could not be created.';
-
-  @override
-  String get nativeError1102 =>
-      'The local listening socket could not be bound.';
-
-  @override
-  String get nativeError1103 =>
-      'The local listening socket could not start listening.';
-
-  @override
-  String get nativeError1104 =>
-      'The local listener thread could not be created.';
-
-  @override
-  String get nativeError1105 => 'Starting the local listener timed out.';
-
-  @override
-  String get nativeError1106 => 'The Android connection could not be accepted.';
-
-  @override
-  String get nativeError1107 =>
-      'The Android connection code could not be read.';
-
-  @override
   String get nativeError1200 => 'System audio capture could not be started.';
 
   @override
-  String get nativeError1201 => 'Screen sharing content could not be obtained.';
+  String get nativeErrorHost =>
+      'The native Windows host could not initialize or change state.';
 
   @override
-  String get nativeError1202 =>
-      'No display is available for system audio capture.';
+  String get nativeErrorTransport =>
+      'The authenticated Android USB audio transport failed.';
 
   @override
-  String get nativeError1203 =>
-      'ScreenCaptureKit audio output could not be configured.';
-
-  @override
-  String get nativeError1204 =>
-      'ScreenCaptureKit audio capture could not be started.';
-
-  @override
-  String get nativeError1205 =>
-      'ScreenCaptureKit audio capture stopped unexpectedly.';
-
-  @override
-  String get nativeError1206 =>
-      'Starting ScreenCaptureKit audio capture timed out.';
+  String get nativeErrorWindowsCapture =>
+      'Windows system-audio capture failed.';
 
   @override
   String get nativeErrorUnknown =>

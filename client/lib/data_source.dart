@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -19,12 +18,9 @@ extension _FirstOrNull<T> on Iterable<T> {
 }
 
 enum UiErrorType {
-  recordingPermissionRequired,
   captureInitializationFailed,
   captureStopped,
   captureStartFailed,
-  listenerStartFailed,
-  noAvailablePort,
   connectAndroidDeviceFailed,
   connectDeviceFailed,
 }
@@ -99,8 +95,7 @@ class DataSource extends ChangeNotifier {
   bool _disposed = false;
   int _sessionGeneration = 0;
   AdbForwardSession? _forwardSession;
-  String? _legacySocketName;
-  String? _legacyDeviceId;
+  WindowsCaptureMode _lastNotifiedCaptureMode = WindowsCaptureMode.inactive;
 
   List<DeviceModel> get devices => _devices;
   int get deviceState => _deviceState;
@@ -110,6 +105,8 @@ class DataSource extends ChangeNotifier {
   int get androidDroppedFrames => _audioCapture.androidDroppedFrames;
   int get androidQueueDepth => _audioCapture.androidQueueDepth;
   int get androidBufferFrames => _audioCapture.androidBufferFrames;
+  WindowsCaptureMode get captureMode => _audioCapture.captureMode;
+  int get globalLoopbackHresult => _audioCapture.globalLoopbackHresult;
 
   bool isCompanionMissing(String deviceId) =>
       _missingCompanionDeviceIds.contains(deviceId);
@@ -207,17 +204,7 @@ class DataSource extends ChangeNotifier {
     }
   }
 
-  bool _prepareAudioCapture({required bool userInitiated}) {
-    if (Platform.isMacOS && !_audioCapture.hasScreenCapturePermission) {
-      if (!userInitiated) return false;
-      if (!_audioCapture.requestScreenCapturePermission()) {
-        _reportNativeError(
-          UiErrorType.recordingPermissionRequired,
-          _audioCapture.takeLastError(fallbackCode: 1002, fallbackMessage: ''),
-        );
-        return false;
-      }
-    }
+  bool _prepareAudioCapture() {
     if (!_audioCapture.initialize()) {
       _reportNativeError(
         UiErrorType.captureInitializationFailed,
@@ -241,7 +228,14 @@ class DataSource extends ChangeNotifier {
       return;
     }
     final error = _audioCapture.pollLastError();
-    if (error == null) return;
+    if (error == null) {
+      final mode = _audioCapture.captureMode;
+      if (mode != _lastNotifiedCaptureMode) {
+        _lastNotifiedCaptureMode = mode;
+        if (!_disposed) notifyListeners();
+      }
+      return;
+    }
     final generation = _sessionGeneration;
     unawaited(
       _failConnection(
@@ -258,14 +252,11 @@ class DataSource extends ChangeNotifier {
         growable: false,
       ).join();
 
-  void connectDevice(String deviceId, {bool userInitiated = false}) {
-    unawaited(_connectDevice(deviceId, userInitiated: userInitiated));
+  void connectDevice(String deviceId) {
+    unawaited(_connectDevice(deviceId));
   }
 
-  Future<void> _connectDevice(
-    String deviceId, {
-    required bool userInitiated,
-  }) async {
+  Future<void> _connectDevice(String deviceId) async {
     if (_disposed) return;
     final device = _devices
         .where((candidate) => candidate.deviceId == deviceId)
@@ -284,7 +275,7 @@ class DataSource extends ChangeNotifier {
     final generation = _sessionGeneration;
     await _cleanupSession(forgetRememberedDevice: false);
     if (_disposed || generation != _sessionGeneration) return;
-    if (!_prepareAudioCapture(userInitiated: userInitiated)) return;
+    if (!_prepareAudioCapture()) return;
 
     _lastAutoDeviceId = deviceId;
     _setLastDeviceId(deviceId);
@@ -299,11 +290,7 @@ class DataSource extends ChangeNotifier {
     try {
       await _adb.validateRuntime();
       _ensureCurrent(generation);
-      if (Platform.isWindows) {
-        await _connectWindowsCompanion(deviceId, generation);
-      } else {
-        await _connectLegacy(deviceId, generation);
-      }
+      await _connectWindowsCompanion(deviceId, generation);
     } catch (error, stack) {
       debugPrint('Connection failed: $error\n$stack');
       await _failConnection(
@@ -383,38 +370,6 @@ class DataSource extends ChangeNotifier {
     });
   }
 
-  Future<int> _findLegacyPort() async {
-    for (var port = 11794; port < 21794; port++) {
-      try {
-        final server = await ServerSocket.bind(
-          InternetAddress.loopbackIPv4,
-          port,
-        );
-        await server.close();
-        return port;
-      } catch (_) {
-        continue;
-      }
-    }
-    return 0;
-  }
-
-  Future<void> _connectLegacy(String deviceId, int generation) async {
-    final port = await _findLegacyPort();
-    if (port == 0) throw StateError('No loopback port is available');
-    final socketName = 'audioshare_$port';
-    _legacySocketName = socketName;
-    _legacyDeviceId = deviceId;
-    final listenStarted = _audioCapture.listenOnPort(
-      port,
-      (_) => _onNativeConnected(generation, deviceId, 'ready'),
-    );
-    if (!listenStarted) throw StateError('Legacy listener could not start');
-    await _adb.reverse(deviceId, socketName, port);
-    await _adb.pushLegacyServer(deviceId);
-    await _adb.launchLegacyServer(deviceId, socketName);
-  }
-
   void _onNativeConnected(int generation, String deviceId, String status) {
     if (_disposed || generation != _sessionGeneration || status != 'ready') {
       return;
@@ -438,6 +393,7 @@ class DataSource extends ChangeNotifier {
     }
     _connectStateMap[deviceId] = 2;
     _phaseMap[deviceId] = ConnectionPhase.streaming;
+    _lastNotifiedCaptureMode = _audioCapture.captureMode;
     _lastAutoDeviceId = deviceId;
     notifyListeners();
   }
@@ -484,14 +440,10 @@ class DataSource extends ChangeNotifier {
       _phaseMap[deviceId] = ConnectionPhase.disconnecting;
     }
     _audioCapture.stop();
-    _adb.stopLegacyServer();
 
     final forward = _forwardSession;
     _forwardSession = null;
-    final legacySocket = _legacySocketName;
-    final legacyDevice = _legacyDeviceId;
-    _legacySocketName = null;
-    _legacyDeviceId = null;
+    _lastNotifiedCaptureMode = WindowsCaptureMode.inactive;
 
     if (forward != null) {
       try {
@@ -500,14 +452,6 @@ class DataSource extends ChangeNotifier {
         debugPrint('Could not remove owned ADB forward: $error');
       }
     }
-    if (legacySocket != null && legacyDevice != null) {
-      try {
-        await _adb.removeReverse(legacyDevice, legacySocket);
-      } catch (error) {
-        debugPrint('Could not remove owned ADB reverse: $error');
-      }
-    }
-
     for (final deviceId in _connectStateMap.keys) {
       _connectStateMap[deviceId] = 0;
       _phaseMap[deviceId] = ConnectionPhase.idle;
@@ -549,7 +493,7 @@ class DataSource extends ChangeNotifier {
       await _adb.validateRuntime();
       await _adb.installBundledCompanion(deviceId);
       _missingCompanionDeviceIds.remove(deviceId);
-      if (!_disposed) connectDevice(deviceId, userInitiated: true);
+      if (!_disposed) connectDevice(deviceId);
     } catch (error, stack) {
       debugPrint('Companion install failed: $error\n$stack');
       _pendingError = UiError(

@@ -239,13 +239,11 @@ class AdbService {
   final String _adbPath;
   final Map<String, DeviceModel> _deviceCache = {};
   bool _disposed = false;
-  Process? _legacyLaunchProcess;
   Process? _deviceTrackerProcess;
 
   static String _defaultAdbPath() {
     final executableDirectory = File(Platform.resolvedExecutable).parent.path;
-    final executableName = Platform.isWindows ? 'adb.exe' : 'adb';
-    return '$executableDirectory${Platform.pathSeparator}$executableName';
+    return '$executableDirectory${Platform.pathSeparator}adb.exe';
   }
 
   String get executablePath => _adbPath;
@@ -268,13 +266,11 @@ class AdbService {
     if (!executable.existsSync()) {
       throw StateError('Bundled ADB is missing: $_adbPath');
     }
-    if (Platform.isWindows) {
-      final directory = executable.parent.path;
-      for (final name in ['AdbWinApi.dll', 'AdbWinUsbApi.dll']) {
-        final file = File('$directory${Platform.pathSeparator}$name');
-        if (!file.existsSync()) {
-          throw StateError('Bundled ADB dependency is missing: ${file.path}');
-        }
+    final directory = executable.parent.path;
+    for (final name in ['AdbWinApi.dll', 'AdbWinUsbApi.dll']) {
+      final file = File('$directory${Platform.pathSeparator}$name');
+      if (!file.existsSync()) {
+        throw StateError('Bundled ADB dependency is missing: ${file.path}');
       }
     }
     await _required(
@@ -665,87 +661,10 @@ class AdbService {
     }
   }
 
-  // Legacy app_process operations remain isolated for macOS compatibility.
-  Future<void> reverse(String deviceId, String socketName, int port) async {
-    await _required(
-      AdbCommandRequest(
-        operation: 'create legacy ADB reverse',
-        arguments: [
-          '-s',
-          deviceId,
-          'reverse',
-          'localabstract:$socketName',
-          'tcp:$port',
-        ],
-      ),
-    );
-  }
-
-  Future<void> removeReverse(String deviceId, String socketName) async {
-    final result = await run(
-      AdbCommandRequest(
-        operation: 'remove owned legacy ADB reverse',
-        arguments: [
-          '-s',
-          deviceId,
-          'reverse',
-          '--remove',
-          'localabstract:$socketName',
-        ],
-      ),
-    );
-    if (!result.succeeded && !result.stderr.contains('device not found')) {
-      throw AdbCommandException(result);
-    }
-  }
-
-  Future<void> pushLegacyServer(String deviceId) async {
-    final executableDirectory = File(Platform.resolvedExecutable).parent.path;
-    final serverPath = Platform.isMacOS
-        ? '$executableDirectory/../Resources/server'
-        : '$executableDirectory${Platform.pathSeparator}server';
-    await _required(
-      AdbCommandRequest(
-        operation: 'push legacy Android receiver',
-        arguments: [
-          '-s',
-          deviceId,
-          'push',
-          serverPath,
-          '/data/local/tmp/audioshare',
-        ],
-        timeout: const Duration(seconds: 20),
-      ),
-    );
-  }
-
-  Future<void> launchLegacyServer(String deviceId, String socketName) async {
-    stopLegacyServer();
-    _legacyLaunchProcess = await Process.start(_adbPath, [
-      '-s',
-      deviceId,
-      'shell',
-      'app_process',
-      '-Djava.class.path=/data/local/tmp/audioshare',
-      '/data/local/tmp',
-      'com.ysbing.audioshare.Main',
-      'socketName=$socketName',
-      'connectCode=$deviceId',
-    ]);
-    _legacyLaunchProcess!.stdout.drain<void>();
-    _legacyLaunchProcess!.stderr.drain<void>();
-  }
-
-  void stopLegacyServer() {
-    _legacyLaunchProcess?.kill(ProcessSignal.sigkill);
-    _legacyLaunchProcess = null;
-  }
-
   void dispose() {
     _disposed = true;
     _deviceTrackerProcess?.kill(ProcessSignal.sigkill);
     _deviceTrackerProcess = null;
-    stopLegacyServer();
     _deviceCache.clear();
   }
 }

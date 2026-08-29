@@ -11,15 +11,6 @@ typedef ConnectCallbackDart = void Function(Pointer<Int8> connectCode);
 typedef AudioCaptureInitializeNative = Int32 Function();
 typedef AudioCaptureInitializeDart = int Function();
 
-typedef AudioCaptureListenNative = Int32 Function(
-  Int32 port,
-  Pointer<NativeFunction<ConnectCallbackNative>> callback,
-);
-typedef AudioCaptureListenDart = int Function(
-  int port,
-  Pointer<NativeFunction<ConnectCallbackNative>> callback,
-);
-
 typedef AudioCaptureConnectNative = Int32 Function(
   Int32 port,
   Pointer<Int8> tokenHex,
@@ -52,6 +43,21 @@ typedef AudioCaptureGetDroppedChunksDart = int Function();
 typedef AudioCaptureGetUint32Native = Uint32 Function();
 typedef AudioCaptureGetUint32Dart = int Function();
 
+typedef AudioCaptureGetInt32Native = Int32 Function();
+typedef AudioCaptureGetInt32Dart = int Function();
+
+enum WindowsCaptureMode {
+  inactive,
+  globalSystem,
+  defaultEndpoint;
+
+  static WindowsCaptureMode fromNative(int value) => switch (value) {
+        1 => WindowsCaptureMode.globalSystem,
+        2 => WindowsCaptureMode.defaultEndpoint,
+        _ => WindowsCaptureMode.inactive,
+      };
+}
+
 class AudioCaptureError {
   const AudioCaptureError(this.code, this.message);
 
@@ -80,13 +86,10 @@ void _handleConnect(Pointer<Int8> connectCodePtr) {
 class AudioCaptureService {
   DynamicLibrary? _lib;
   AudioCaptureInitializeDart? _initialize;
-  AudioCaptureListenDart? _listen;
   AudioCaptureConnectDart? _connect;
   AudioCaptureStartDart? _start;
   AudioCaptureStopDart? _stop;
   AudioCaptureCleanupDart? _cleanup;
-  AudioCaptureBoolDart? _hasPermission;
-  AudioCaptureBoolDart? _requestPermission;
   AudioCaptureBoolDart? _getLastErrorCode;
   AudioCaptureGetErrorMessageDart? _getLastErrorMessage;
   AudioCaptureCleanupDart? _clearLastError;
@@ -95,6 +98,8 @@ class AudioCaptureService {
   AudioCaptureGetDroppedChunksDart? _getAndroidDroppedFrames;
   AudioCaptureGetUint32Dart? _getAndroidQueueDepth;
   AudioCaptureGetUint32Dart? _getAndroidBufferFrames;
+  AudioCaptureGetUint32Dart? _getCaptureMode;
+  AudioCaptureGetInt32Dart? _getGlobalLoopbackHresult;
 
   bool _initialized = false;
   String? _libraryLoadError;
@@ -108,24 +113,20 @@ class AudioCaptureService {
 
   void _loadLibrary() {
     try {
+      if (!Platform.isWindows) {
+        throw UnsupportedError(
+          'This fork supports Windows system audio capture only.',
+        );
+      }
       final exeDir = File(Platform.resolvedExecutable).parent.path;
-      final libName =
-          Platform.isMacOS ? 'audio_capture.dylib' : 'audio_capture.dll';
-      final dllPath = '$exeDir${Platform.pathSeparator}$libName';
+      final dllPath = '$exeDir${Platform.pathSeparator}audio_capture.dll';
       _lib = DynamicLibrary.open(dllPath);
       _initialize = _lib!.lookupFunction<AudioCaptureInitializeNative,
           AudioCaptureInitializeDart>('AudioCapture_Initialize');
-      if (Platform.isWindows) {
-        _connect = _lib!
-            .lookupFunction<AudioCaptureConnectNative, AudioCaptureConnectDart>(
-          'AudioCapture_Connect',
-        );
-      } else {
-        _listen = _lib!
-            .lookupFunction<AudioCaptureListenNative, AudioCaptureListenDart>(
-          'AudioCapture_Listen',
-        );
-      }
+      _connect = _lib!
+          .lookupFunction<AudioCaptureConnectNative, AudioCaptureConnectDart>(
+        'AudioCapture_Connect',
+      );
       _start =
           _lib!.lookupFunction<AudioCaptureStartNative, AudioCaptureStartDart>(
         'AudioCapture_Start',
@@ -138,16 +139,6 @@ class AudioCaptureService {
           .lookupFunction<AudioCaptureCleanupNative, AudioCaptureCleanupDart>(
         'AudioCapture_Cleanup',
       );
-      if (Platform.isMacOS) {
-        _hasPermission =
-            _lib!.lookupFunction<AudioCaptureBoolNative, AudioCaptureBoolDart>(
-          'AudioCapture_HasPermission',
-        );
-        _requestPermission =
-            _lib!.lookupFunction<AudioCaptureBoolNative, AudioCaptureBoolDart>(
-          'AudioCapture_RequestPermission',
-        );
-      }
       _getLastErrorCode =
           _lib!.lookupFunction<AudioCaptureBoolNative, AudioCaptureBoolDart>(
         'AudioCapture_GetLastErrorCode',
@@ -159,63 +150,39 @@ class AudioCaptureService {
           .lookupFunction<AudioCaptureCleanupNative, AudioCaptureCleanupDart>(
         'AudioCapture_ClearLastError',
       );
-      if (Platform.isWindows) {
-        _getDroppedChunks = _lib!.lookupFunction<
-            AudioCaptureGetDroppedChunksNative,
-            AudioCaptureGetDroppedChunksDart>('AudioCapture_GetDroppedChunks');
-        _getAndroidReceivedFrames = _lib!.lookupFunction<
-            AudioCaptureGetDroppedChunksNative,
-            AudioCaptureGetDroppedChunksDart>(
-          'AudioCapture_GetAndroidReceivedFrames',
-        );
-        _getAndroidDroppedFrames = _lib!.lookupFunction<
-            AudioCaptureGetDroppedChunksNative,
-            AudioCaptureGetDroppedChunksDart>(
-          'AudioCapture_GetAndroidDroppedFrames',
-        );
-        _getAndroidQueueDepth = _lib!.lookupFunction<
-            AudioCaptureGetUint32Native,
-            AudioCaptureGetUint32Dart>('AudioCapture_GetAndroidQueueDepth');
-        _getAndroidBufferFrames = _lib!.lookupFunction<
-            AudioCaptureGetUint32Native,
-            AudioCaptureGetUint32Dart>('AudioCapture_GetAndroidBufferFrames');
-      }
+      _getDroppedChunks = _lib!.lookupFunction<
+          AudioCaptureGetDroppedChunksNative,
+          AudioCaptureGetDroppedChunksDart>('AudioCapture_GetDroppedChunks');
+      _getAndroidReceivedFrames = _lib!.lookupFunction<
+          AudioCaptureGetDroppedChunksNative, AudioCaptureGetDroppedChunksDart>(
+        'AudioCapture_GetAndroidReceivedFrames',
+      );
+      _getAndroidDroppedFrames = _lib!.lookupFunction<
+          AudioCaptureGetDroppedChunksNative, AudioCaptureGetDroppedChunksDart>(
+        'AudioCapture_GetAndroidDroppedFrames',
+      );
+      _getAndroidQueueDepth = _lib!.lookupFunction<AudioCaptureGetUint32Native,
+          AudioCaptureGetUint32Dart>('AudioCapture_GetAndroidQueueDepth');
+      _getAndroidBufferFrames = _lib!.lookupFunction<
+          AudioCaptureGetUint32Native,
+          AudioCaptureGetUint32Dart>('AudioCapture_GetAndroidBufferFrames');
+      _getCaptureMode = _lib!.lookupFunction<AudioCaptureGetUint32Native,
+          AudioCaptureGetUint32Dart>('AudioCapture_GetCaptureMode');
+      _getGlobalLoopbackHresult = _lib!
+          .lookupFunction<AudioCaptureGetInt32Native, AudioCaptureGetInt32Dart>(
+              'AudioCapture_GetGlobalLoopbackHresult');
     } catch (error) {
       _libraryLoadError = error.toString();
     }
   }
 
-  bool get hasScreenCapturePermission {
-    if (!Platform.isMacOS) return true;
-    return _hasPermission?.call() != 0;
-  }
-
-  bool requestScreenCapturePermission() {
-    if (!Platform.isMacOS) return true;
-    return _requestPermission?.call() != 0;
-  }
-
-  /// Initialize system audio capture (WASAPI on Windows, ScreenCaptureKit on macOS).
+  /// Initialize Windows system-audio capture.
   bool initialize() {
     if (_initialized) return true;
     if (_initialize == null) return false;
     _activeService = this;
     _initialized = _initialize!() != 0;
     return _initialized;
-  }
-
-  /// Start listening for Android connection on given port.
-  /// [onConnect] is called with the device connectCode when Android connects.
-  bool listenOnPort(int port, void Function(String connectCode) onConnect) {
-    if (!_initialized || _listen == null) return false;
-    onConnected = onConnect;
-
-    _connectCallback?.close();
-    _connectCallback = NativeCallable<ConnectCallbackNative>.listener(
-      _handleConnect,
-    );
-
-    return _listen!(port, _connectCallback!.nativeFunction) != 0;
   }
 
   /// Connect outbound to an ADB-owned loopback forward and authenticate the
@@ -244,8 +211,12 @@ class AudioCaptureService {
   int get androidDroppedFrames => _getAndroidDroppedFrames?.call() ?? 0;
   int get androidQueueDepth => _getAndroidQueueDepth?.call() ?? 0;
   int get androidBufferFrames => _getAndroidBufferFrames?.call() ?? 0;
+  WindowsCaptureMode get captureMode => WindowsCaptureMode.fromNative(
+        _getCaptureMode?.call() ?? 0,
+      );
+  int get globalLoopbackHresult => _getGlobalLoopbackHresult?.call() ?? 0;
 
-  /// Start audio capture stream (call after listenOnPort callback fires)
+  /// Start audio capture after the Android transport handshake completes.
   bool start() {
     if (!_initialized || _start == null) return false;
     return _start!() != 0;

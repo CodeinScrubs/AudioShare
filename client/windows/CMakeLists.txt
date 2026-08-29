@@ -51,7 +51,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Native audio capture library
 add_library(audio_capture SHARED "${CMAKE_CURRENT_SOURCE_DIR}/../native/audio_capture.cpp")
-target_link_libraries(audio_capture PRIVATE ole32 ws2_32 winmm)
+target_link_libraries(audio_capture PRIVATE mmdevapi ole32 ws2_32 winmm)
 target_compile_options(audio_capture PRIVATE /utf-8)
 apply_standard_settings(audio_capture)
 

@@ -14,19 +14,24 @@ pass/fail evidence. A test is not passed merely because the app launches.
 4. Select Connect. If the companion is absent, use **Install companion** and
    confirm Android shows the app afterward.
 5. Connect and play a Windows system sound. Confirm it plays on the phone speaker.
-6. Play browser audio, then two applications simultaneously. Confirm everything
-   routed to the default Windows endpoint is audible.
-7. If Infinit is available, play idplayer content and confirm it is included
+6. Record the capture label. On supported Windows it should say **global mode**;
+   on compatibility fallback it must explicitly say **default output**.
+7. Play browser audio, then two applications simultaneously. Confirm both are
+   audible.
+8. If Infinit is available, play idplayer content and confirm it is included
    without selecting a process.
-8. Turn Windows Wi-Fi off and repeat. No Internet should be required.
-9. Turn the phone screen off for 10 minutes. Confirm playback and the foreground
+9. On global mode, route a second application to another active Windows output
+   endpoint and confirm both endpoints are captured. On compatibility mode,
+   record this as the known default-output-only limitation.
+10. Turn Windows Wi-Fi off and repeat. No Internet should be required.
+11. Turn the phone screen off for 10 minutes. Confirm playback and the foreground
    service remain active.
-10. Unplug USB during playback. Confirm bounded failure and exact mapping cleanup.
-11. Reconnect the remembered phone. Confirm automatic recovery without opening
+12. Unplug USB during playback. Confirm bounded failure and exact mapping cleanup.
+13. Reconnect the remembered phone. Confirm automatic recovery without opening
     either UI or pressing Connect.
-12. Repeat connect/disconnect 25 times and compare host handles, threads, sockets,
+14. Repeat connect/disconnect 25 times and compare host handles, threads, sockets,
     memory, Android threads/heap, and `adb forward --list` for monotonic leaks.
-13. Run a two-hour stream. Record underruns, host/phone dropped-frame counters,
+15. Run a two-hour stream. Record underruns, host/phone dropped-frame counters,
     latency at start/end, drift, CPU, and memory.
 
 ## Part 2: Restricted target PC
@@ -48,8 +53,8 @@ pass/fail evidence. A test is not passed merely because the app launches.
    times and report median, 95th percentile, glitches, and dropped frames.
 8. Lock the phone, disconnect/reconnect USB, close/reopen the host, and restart
    idplayer. Confirm recovery behavior for each case.
-9. Change the Windows default output endpoint. Record current limitation and
-   verify reconnecting selects the new default.
+9. Change the Windows default output endpoint. Global mode should continue
+   without reconnecting; compatibility mode currently requires recovery testing.
 10. Inspect diagnostics for deliberately broken ADB executable, unauthorized and
     offline states, missing companion, failed launch, failed forward, handshake
     timeout, WASAPI failure, USB unplug, and AudioTrack failure.

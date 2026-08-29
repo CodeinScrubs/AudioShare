@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -8,6 +7,7 @@ import 'data_source.dart';
 import 'l10n/app_localizations_extensions.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'models/device_model.dart';
+import 'services/audio_capture.dart' show WindowsCaptureMode;
 import 'utils/prefs.dart';
 
 const _supportedLocales = [Locale('en'), Locale('zh')];
@@ -122,43 +122,27 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
 
   String _errorDescription(AppLocalizations l10n, UiError error) {
     final description = switch (error.type) {
-      UiErrorType.recordingPermissionRequired =>
-        l10n.recordingPermissionDescription,
       UiErrorType.captureInitializationFailed =>
         l10n.captureInitializationFailed,
       UiErrorType.captureStopped => l10n.captureStopped,
       UiErrorType.captureStartFailed => l10n.captureStartFailed,
-      UiErrorType.listenerStartFailed => l10n.listenerStartFailed,
-      UiErrorType.noAvailablePort => l10n.noAvailablePort,
       UiErrorType.connectAndroidDeviceFailed => l10n.connectAndroidDeviceFailed,
       UiErrorType.connectDeviceFailed => l10n.connectDeviceFailed,
     };
     if (error.nativeError case final nativeError?) {
-      final nativeDetails =
-          '${l10n.nativeErrorDescription(nativeError.code)}\n\n${l10n.nativeErrorDetailsFormatted(nativeError.code)}';
-      if (error.type == UiErrorType.recordingPermissionRequired) {
-        return '$description\n\n$nativeDetails';
-      }
-      return nativeDetails;
+      final details = <String>[
+        description,
+        l10n.nativeErrorDescription(nativeError.code),
+        if (nativeError.message.trim().isNotEmpty)
+          l10n.exceptionDetails(nativeError.message.trim()),
+        l10n.nativeErrorDetailsFormatted(nativeError.code),
+      ];
+      return details.join('\n\n');
     }
     if (error.exception case final exception?) {
       return '$description\n\n${l10n.exceptionDetails(exception.toString())}';
     }
     return description;
-  }
-
-  Future<void> _openScreenRecordingSettings() async {
-    if (!Platform.isMacOS) return;
-    const screenRecordingSettings =
-        'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
-    const privacySettings =
-        'x-apple.systempreferences:com.apple.preference.security';
-    final result = await Process.run('/usr/bin/open', [
-      screenRecordingSettings,
-    ]);
-    if (result.exitCode != 0) {
-      await Process.run('/usr/bin/open', [privacySettings]);
-    }
   }
 
   Future<void> _showPendingError() async {
@@ -174,20 +158,10 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
           context: context,
           builder: (context) => AlertDialog(
             title: Text(
-              error.type == UiErrorType.recordingPermissionRequired
-                  ? l10n.recordingPermissionTitle
-                  : l10n.connectionFailedTitle,
+              l10n.connectionFailedTitle,
             ),
             content: SelectableText(_errorDescription(l10n, error)),
             actions: [
-              if (error.type == UiErrorType.recordingPermissionRequired)
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    unawaited(_openScreenRecordingSettings());
-                  },
-                  child: Text(l10n.openSystemSettings),
-                ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: Text(l10n.ok),
@@ -297,7 +271,13 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
               AdbDeviceState.offline => l10n.usbOffline,
               _ when device.transportType != AdbTransportType.usb =>
                 l10n.ignoredAdbDevice,
-              _ when connectState == 2 => l10n.streamingAllSystemAudio,
+              _ when connectState == 2 => switch (_dataSource.captureMode) {
+                  WindowsCaptureMode.globalSystem =>
+                    l10n.streamingGlobalSystemAudio,
+                  WindowsCaptureMode.defaultEndpoint =>
+                    l10n.streamingDefaultOutputAudio,
+                  WindowsCaptureMode.inactive => l10n.streamingAllSystemAudio,
+                },
               _ when phaseStatus != null => phaseStatus,
               _ when companionMissing => l10n.installCompanion,
               _ =>
@@ -348,7 +328,6 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                                       if (connectState == 0) {
                                         _dataSource.connectDevice(
                                           device.deviceId,
-                                          userInitiated: true,
                                         );
                                       } else if (connectState == 2) {
                                         _dataSource

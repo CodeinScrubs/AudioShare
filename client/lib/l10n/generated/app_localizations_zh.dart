@@ -15,9 +15,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ok => '确定';
 
   @override
-  String get openSystemSettings => '打开系统设置';
-
-  @override
   String get noDevices => '未找到设备';
 
   @override
@@ -46,6 +43,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get streamingAllSystemAudio => '正在传输全部 Windows 系统音频';
+
+  @override
+  String get streamingGlobalSystemAudio => '正在传输全部 Windows 音频（全局模式）';
+
+  @override
+  String get streamingDefaultOutputAudio => '正在传输 Windows 默认输出（兼容模式）';
 
   @override
   String get phaseCheckingAdb => '正在检查 USB 和 ADB';
@@ -91,13 +94,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get recordingPermissionTitle => '需要录制权限';
-
-  @override
-  String get recordingPermissionDescription =>
-      '请在“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”中允许 AudioShare。macOS 需要重新启动应用才能让新权限生效；授权后请退出并重新打开 AudioShare，然后再次连接。';
-
-  @override
   String get connectionFailedTitle => '连接失败';
 
   @override
@@ -108,12 +104,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get captureStartFailed => '无法开始捕获系统音频。';
-
-  @override
-  String get listenerStartFailed => '无法启动本地音频传输服务。';
-
-  @override
-  String get noAvailablePort => '没有可用的本地监听端口。';
 
   @override
   String get connectAndroidDeviceFailed => '连接 Android 设备时发生错误。';
@@ -130,55 +120,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nativeError1000 => '系统音频捕获初始化失败。';
 
   @override
-  String get nativeError1001 => '当前 macOS 版本不支持系统音频捕获。';
-
-  @override
-  String get nativeError1002 => '屏幕与系统音频录制权限不可用。';
-
-  @override
-  String get nativeError1100 => '本地音频监听服务无法启动。';
-
-  @override
-  String get nativeError1101 => '无法创建本地监听套接字。';
-
-  @override
-  String get nativeError1102 => '无法绑定本地监听套接字。';
-
-  @override
-  String get nativeError1103 => '本地监听套接字无法开始监听。';
-
-  @override
-  String get nativeError1104 => '无法创建本地监听线程。';
-
-  @override
-  String get nativeError1105 => '启动本地监听服务超时。';
-
-  @override
-  String get nativeError1106 => '无法接受 Android 设备连接。';
-
-  @override
-  String get nativeError1107 => '无法读取 Android 设备连接码。';
-
-  @override
   String get nativeError1200 => '无法开始系统音频捕获。';
 
   @override
-  String get nativeError1201 => '无法获取屏幕共享内容。';
+  String get nativeErrorHost => 'Windows 原生主机无法初始化或切换状态。';
 
   @override
-  String get nativeError1202 => '没有可用于系统音频捕获的显示器。';
+  String get nativeErrorTransport => '经身份验证的 Android USB 音频传输失败。';
 
   @override
-  String get nativeError1203 => '无法配置 ScreenCaptureKit 音频输出。';
-
-  @override
-  String get nativeError1204 => '无法启动 ScreenCaptureKit 音频捕获。';
-
-  @override
-  String get nativeError1205 => 'ScreenCaptureKit 音频捕获意外停止。';
-
-  @override
-  String get nativeError1206 => '启动 ScreenCaptureKit 音频捕获超时。';
+  String get nativeErrorWindowsCapture => 'Windows 系统音频捕获失败。';
 
   @override
   String get nativeErrorUnknown => '发生未知系统音频捕获错误。';

@@ -110,12 +110,6 @@ abstract class AppLocalizations {
   /// **'OK'**
   String get ok;
 
-  /// No description provided for @openSystemSettings.
-  ///
-  /// In en, this message translates to:
-  /// **'Open System Settings'**
-  String get openSystemSettings;
-
   /// No description provided for @noDevices.
   ///
   /// In en, this message translates to:
@@ -175,6 +169,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Streaming all Windows system audio'**
   String get streamingAllSystemAudio;
+
+  /// No description provided for @streamingGlobalSystemAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Streaming all Windows audio (global mode)'**
+  String get streamingGlobalSystemAudio;
+
+  /// No description provided for @streamingDefaultOutputAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Streaming Windows default output (compatibility mode)'**
+  String get streamingDefaultOutputAudio;
 
   /// No description provided for @phaseCheckingAdb.
   ///
@@ -254,18 +260,6 @@ abstract class AppLocalizations {
   /// **' - {ip}:{port}'**
   String deviceNetworkAddress(String ip, String port);
 
-  /// No description provided for @recordingPermissionTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Recording permission required'**
-  String get recordingPermissionTitle;
-
-  /// No description provided for @recordingPermissionDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'In System Settings, go to Privacy & Security > Screen & System Audio Recording and allow AudioShare. macOS requires the app to restart before the new permission takes effect; quit and reopen AudioShare, then connect again.'**
-  String get recordingPermissionDescription;
-
   /// No description provided for @connectionFailedTitle.
   ///
   /// In en, this message translates to:
@@ -289,18 +283,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'System audio capture could not be started.'**
   String get captureStartFailed;
-
-  /// No description provided for @listenerStartFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'The local audio streaming service could not be started.'**
-  String get listenerStartFailed;
-
-  /// No description provided for @noAvailablePort.
-  ///
-  /// In en, this message translates to:
-  /// **'No local listening port is available.'**
-  String get noAvailablePort;
 
   /// No description provided for @connectAndroidDeviceFailed.
   ///
@@ -326,107 +308,29 @@ abstract class AppLocalizations {
   /// **'Audio capture initialization failed.'**
   String get nativeError1000;
 
-  /// No description provided for @nativeError1001.
-  ///
-  /// In en, this message translates to:
-  /// **'This macOS version does not support system audio capture.'**
-  String get nativeError1001;
-
-  /// No description provided for @nativeError1002.
-  ///
-  /// In en, this message translates to:
-  /// **'Screen and system audio recording permission is unavailable.'**
-  String get nativeError1002;
-
-  /// No description provided for @nativeError1100.
-  ///
-  /// In en, this message translates to:
-  /// **'The local audio listener could not be started.'**
-  String get nativeError1100;
-
-  /// No description provided for @nativeError1101.
-  ///
-  /// In en, this message translates to:
-  /// **'The local listening socket could not be created.'**
-  String get nativeError1101;
-
-  /// No description provided for @nativeError1102.
-  ///
-  /// In en, this message translates to:
-  /// **'The local listening socket could not be bound.'**
-  String get nativeError1102;
-
-  /// No description provided for @nativeError1103.
-  ///
-  /// In en, this message translates to:
-  /// **'The local listening socket could not start listening.'**
-  String get nativeError1103;
-
-  /// No description provided for @nativeError1104.
-  ///
-  /// In en, this message translates to:
-  /// **'The local listener thread could not be created.'**
-  String get nativeError1104;
-
-  /// No description provided for @nativeError1105.
-  ///
-  /// In en, this message translates to:
-  /// **'Starting the local listener timed out.'**
-  String get nativeError1105;
-
-  /// No description provided for @nativeError1106.
-  ///
-  /// In en, this message translates to:
-  /// **'The Android connection could not be accepted.'**
-  String get nativeError1106;
-
-  /// No description provided for @nativeError1107.
-  ///
-  /// In en, this message translates to:
-  /// **'The Android connection code could not be read.'**
-  String get nativeError1107;
-
   /// No description provided for @nativeError1200.
   ///
   /// In en, this message translates to:
   /// **'System audio capture could not be started.'**
   String get nativeError1200;
 
-  /// No description provided for @nativeError1201.
+  /// No description provided for @nativeErrorHost.
   ///
   /// In en, this message translates to:
-  /// **'Screen sharing content could not be obtained.'**
-  String get nativeError1201;
+  /// **'The native Windows host could not initialize or change state.'**
+  String get nativeErrorHost;
 
-  /// No description provided for @nativeError1202.
+  /// No description provided for @nativeErrorTransport.
   ///
   /// In en, this message translates to:
-  /// **'No display is available for system audio capture.'**
-  String get nativeError1202;
+  /// **'The authenticated Android USB audio transport failed.'**
+  String get nativeErrorTransport;
 
-  /// No description provided for @nativeError1203.
+  /// No description provided for @nativeErrorWindowsCapture.
   ///
   /// In en, this message translates to:
-  /// **'ScreenCaptureKit audio output could not be configured.'**
-  String get nativeError1203;
-
-  /// No description provided for @nativeError1204.
-  ///
-  /// In en, this message translates to:
-  /// **'ScreenCaptureKit audio capture could not be started.'**
-  String get nativeError1204;
-
-  /// No description provided for @nativeError1205.
-  ///
-  /// In en, this message translates to:
-  /// **'ScreenCaptureKit audio capture stopped unexpectedly.'**
-  String get nativeError1205;
-
-  /// No description provided for @nativeError1206.
-  ///
-  /// In en, this message translates to:
-  /// **'Starting ScreenCaptureKit audio capture timed out.'**
-  String get nativeError1206;
+  /// **'Windows system-audio capture failed.'**
+  String get nativeErrorWindowsCapture;
 
   /// No description provided for @nativeErrorUnknown.
   ///

@@ -1,83 +1,57 @@
-# AudioShare
+# AudioShare USB 自定义版
 
-[English](../README.md) | [简体中文](README.zh-CN.md)
+本分支专注于一个产品场景：通过 USB ADB，把 **Windows 的全部普通系统音频**
+传输到 Android 手机扬声器。macOS、Wi-Fi 传输和按进程选择音频不属于本分支的
+产品范围。
 
-AudioShare 通过 ADB 将 Windows 或 macOS 的系统音频传输到 Android 设备。它支持 USB 和 ADB over Wi-Fi，无需额外硬件，可通过手机扬声器或耳机播放电脑声音。
-
-## 功能
-
-- Windows 使用 WASAPI loopback 捕获系统音频（48 kHz、立体声、PCM16）。
-- macOS 使用 ScreenCaptureKit 捕获系统音频，需要 macOS 13 或更高版本。
-- 使用 ADB reverse tunnel 传输，支持 USB 与 ADB over Wi-Fi。
-- 可自动连接上一次使用的设备。
-- 客户端内置 ADB 和 Android 服务端，无需单独安装手机应用。
-
-## 快速开始
-
-1. 从 [Releases](https://github.com/ysbing/AudioShare/releases) 下载对应平台的安装包或压缩包并解压。
-2. 在 Android 设备上开启 USB 调试，再通过 USB 连接电脑，或完成 ADB over Wi-Fi 配对。
-3. 启动 AudioShare；设备出现后点击“连接”。
-
-macOS 首次使用时，请在系统提示中允许“屏幕与系统音频录制”。如需稍后授权，可前往“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”，授权后退出并重新打开 AudioShare，再重新连接。
-
-## 运行要求
-
-| 平台 | 运行要求 | 构建要求 |
-| --- | --- | --- |
-| Windows | Windows 10/11 x64、可用的 ADB 驱动 | Flutter 3.x、Visual Studio 2022+（Desktop C++ 工作负载） |
-| macOS | macOS 13+ | Flutter 3.x、Xcode 14+ |
-| Android 设备 | 已开启 USB 调试，或已配置 ADB over Wi-Fi | Android Studio 或 JDK（仅构建服务端时需要） |
-
-可使用右上角语言菜单切换 English 或简体中文。勾选窗口底部选项后，应用会在后续启动时自动连接上次使用的设备。
-
-## 从源码构建
-
-```bash
-cd client
-flutter pub get
-flutter gen-l10n
-flutter analyze
-flutter test
-```
-
-构建 Windows 客户端：
-
-```powershell
-cd client
-flutter build windows --release
-```
-
-产物：`client/build/windows/x64/runner/Release/audioshare.exe`
-
-构建 macOS 客户端：
-
-```bash
-cd client
-flutter build macos --release
-```
-
-产物：`client/build/macos/Build/Products/Release/AudioShare.app`
-
-构建 Android 服务端，产物会复制到 `client/assets/server`：
-
-```bash
-./gradlew :server:assembleRelease
-```
-
-## 项目结构
+## 工作方式
 
 ```text
-AudioShare/
-├── client/                  Flutter 桌面客户端
-│   ├── lib/                 界面、设备状态、ADB 与 FFI 绑定
-│   ├── native/              Windows 与 macOS 音频捕获实现
-│   ├── assets/              内置 ADB 二进制与 Android 服务端
-│   ├── windows/             Windows runner 与 CMake 配置
-│   └── macos/               macOS runner 与 Xcode 配置
-├── server/                  Android 音频播放服务端
-└── tools/                   仓库工具与品牌资源
+Windows 应用与系统声音
+        -> 全局进程回环捕获（首选）
+        -> 默认输出设备回环（兼容回退）
+        -> 48 kHz / 双声道 / PCM16
+        -> 仅连接 127.0.0.1 的 Windows 客户端
+        -> USB ADB forward
+        -> Android 配套应用 LocalServerSocket
+        -> AudioTrack
+        -> 手机扬声器
 ```
 
-## 许可证
+在 Windows 支持时，主机使用端点无关的 Application Process Loopback，并排除
+AudioShare 自己的进程树。因此不需要选择 `idplayer.exe`，Chrome、VLC、系统提示音
+以及其他普通共享模式音频都会被包含。若功能探测失败，程序会明确切换到“默认输出
+兼容模式”；该模式目前无法保证捕获被手动路由到其他输出设备的应用。
 
-本项目采用 [LGPL-3.0-or-later](../LICENSE) 许可证。
+Windows 主程序不创建入站音频监听端口。Android 主 APK 不申请 `INTERNET`、
+麦克风、相机、位置或存储权限。正常运行不需要管理员权限、Windows 服务、虚拟声卡、
+防火墙规则、Wi-Fi 或互联网。
+
+## 首次使用
+
+1. 完整解压 Windows 包。
+2. 在手机上开启开发者选项和 USB 调试。
+3. 使用支持数据传输的 USB 线连接手机。
+4. 解锁手机并允许此电脑进行 USB 调试。
+5. 启动 AudioShare；如有提示，点击“安装配套应用”。
+6. 首次连接并确认 Windows 系统声音能从手机播放。
+
+Windows 必须已经能识别手机的 ADB USB 接口。缺失的厂商 USB 驱动可能需要管理员
+安装；AudioShare 不会提权或绕过组织安全策略。
+
+## 当前验证边界
+
+已完成：Flutter 静态分析与单元测试、Windows 原生严格编译、全局捕获与默认输出
+回退的本地假接收端集成测试、Android 单元测试/检查/构建及权限清单检查。
+
+仍需真机：USB forward、Android 自动启动、锁屏/息屏播放、手机扬声器路由、防火墙
+提示、端到端延迟、反复重连和长时间漂移测试。
+
+详细信息请查看：
+
+- [架构](COMPANION_ARCHITECTURE.md)
+- [POC 结果](POC_RESULTS.md)
+- [手动测试计划](MY_TEST_PLAN.md)
+- [故障排查](TROUBLESHOOTING.md)
+
+许可证为 [LGPL-3.0-or-later](../LICENSE)。

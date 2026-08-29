@@ -1,7 +1,8 @@
 # Phase B POC Results
 
-Status: partial; hardware-dependent transport and audio POCs are blocked because
-no Android device is currently attached.
+Status: partial. Windows global capture now has a hardware-independent native
+integration result; physical USB/Android transport and phone playback remain
+blocked because no authorized Android device is attached.
 
 Recorded: 2026-08-29 (Asia/Tehran)
 
@@ -89,21 +90,62 @@ and process exit behavior.
 
 ## POC 3: Windows system-loopback capture
 
-The requested scope is now **System Audio (All Apps)** on the selected/default
-render endpoint. Application/process loopback is not required.
+The requested scope is **System Audio (All Apps)**. The production hierarchy is:
 
-Status: the Windows native source compiles and links with strict MinGW warnings,
-and its protocol tests pass. Runtime capture remains NOT RUN because the
-production Flutter/MSVC desktop executable has not been built. The implementation
-uses ordinary event-driven shared-mode endpoint loopback, owns all WASAPI
-interfaces on the capture thread, asks the Windows audio engine to convert to
-48 kHz stereo PCM16, and separates capture from blocking transport through a
-bounded eight-chunk live-edge queue.
+1. feature-probe endpoint-independent Application Process Loopback in
+   `EXCLUDE_TARGET_PROCESS_TREE` mode, excluding the AudioShare host and children;
+2. if activation or 48 kHz initialization is unsupported, use event-driven
+   shared-mode loopback of the default console render endpoint.
+
+The implementation does not select `idplayer.exe` or any other source process.
+It owns activation and all WASAPI interfaces on the capture thread, asks the
+Windows audio engine for canonical 48 kHz stereo PCM16, and separates capture
+from blocking transport through a bounded eight-chunk live-edge queue.
+
+Status: INTEGRATION TESTED locally without Android. A native fake companion
+exercised the real DLL handshake, started capture, drained framed PCM, and
+reported:
+
+```text
+capture_mode=1 global_hresult=0x00000000
+pcm_bytes=785280 nonzero_pcm_bytes=135161
+EXIT=0
+```
+
+`capture_mode=1` is the global endpoint-independent path. The test ran for four
+seconds and required at least one non-zero PCM byte. The fake TCP listener exists
+only in `system_capture_integration_test.exe`; production `audio_capture.dll`
+still contains no bind/listen path. This proves successful feature activation,
+48 kHz initialization, capture start, and non-zero signal delivery on this
+Windows host. It does not prove which applications produced the ambient signal,
+simultaneous multi-application coverage, cross-endpoint coverage, phone playback,
+or end-to-end latency.
+
+A second strict build defined the test-only
+`AUDIOSHARE_FORCE_DEFAULT_ENDPOINT` compile flag and required compatibility mode
+plus non-zero signal:
+
+```text
+capture_mode=2 global_hresult=0x80004001
+pcm_bytes=787200 nonzero_pcm_bytes=135498
+DEFAULT_EXIT=0
+```
+
+This verifies the ordinary default-endpoint branch without weakening production
+feature detection. `0x80004001` is the intentionally injected `E_NOTIMPL` probe
+result. It is not evidence from an actually unsupported/old Windows build.
+
+Strict portable GCC 16.2 compilation passed under `-Wall -Wextra -Werror` for
+both the DLL and integration harness. The installed MSYS2 GCC 16.1 front end was
+not used because its `cc1plus.exe` currently exits before parsing source with
+Windows status `0xC0000139` (toolchain installation failure, not a source error).
 
 Required checks remain:
 
 - simultaneous audio from several applications plus Windows system sounds;
-- default and manually selected output endpoints;
+- applications explicitly routed to different output endpoints;
+- validation of fallback on a Windows build that genuinely lacks/rejects global
+  process loopback (the forced local branch test already passes);
 - 44.1/48 kHz, PCM16/24/32, float32, stereo, and multichannel sources;
 - endpoint change/invalidation, Audio service interruption, silence, and
   discontinuity;
@@ -136,6 +178,10 @@ Implemented and locally checked without claiming hardware behavior:
 
 - Windows native code has no listening export or `bind`/`listen` call and
   connects only to `127.0.0.1:<allocated-forward-port>`;
+- global process-loopback capture is feature-probed, excludes the host process
+  tree, and exposes active/fallback mode diagnostics to the UI;
+- a native fake-companion integration run activated global mode and delivered
+  non-zero framed PCM through the actual DLL transport;
 - a 256-bit per-session token authenticates a versioned framed handshake;
 - native transport and WASAPI capture run on separate bounded-lifecycle threads;
 - native wire-format golden/bounds/token tests compile and pass;
@@ -161,7 +207,7 @@ host checks now pass:
 flutter pub get
 flutter gen-l10n
 flutter analyze: No issues found
-flutter test: 4 tests passed
+flutter test: 5 tests passed
 ```
 
 The tests cover isolated ADB environment construction, USB/state parsing,
@@ -172,9 +218,10 @@ installation lacks the Desktop C++ workload components, CMake tools, and Windows
 10 SDK required by Flutter. No MSVC or Flutter Windows artifact is claimed.
 
 The Windows CMake project also configured and generated successfully with
-CMake 4.3.2/Ninja against a temporary MinGW toolchain. This validates the edited
-CMake graph and packaging syntax, but is not substituted for the required MSVC
-Flutter link/build.
+CMake 4.3.2/Ninja against a temporary MinGW toolchain. The native DLL and
+system-capture harness additionally compile/link with portable GCC 16.2. This
+validates the edited native code and CMake graph, but is not substituted for the
+required MSVC Flutter link/build.
 
 ## Installed companion: hardware-independent slice
 
@@ -208,11 +255,21 @@ TESTED and STATICALLY VERIFIED only. Installation, ADB launch, forward transport
 AudioTrack output, route preference, locked-screen behavior, and foreground
 notification behavior remain NOT RUN without an attached device.
 
-The unsigned POC release APK SHA-256 at this checkpoint is:
+The locally rebuilt unsigned POC release APK SHA-256 at this checkpoint is:
 
 ```text
-B1B13E509FDBEB92E799E7402FF2A5BC730F3D87D868C4604CF8862BC578181E
+67220EDB0AB1420D8D662C2B5BE6E04DC22C0954EAD0CA0A1BF44D4CDD37B964
 ```
 
 It is not a distributable artifact. Production signing requires a stable
-external key supplied through the documented environment variables.
+external key supplied through the documented environment variables. The debug
+APK intentionally bundled only by Windows Debug packaging has SHA-256:
+
+```text
+A561C224D8792270F18494187E67523DD4A3B75F0B84629739C996A8022B5817
+```
+
+The final cross-repository regression reran `testDebugUnitTest`, `lintRelease`,
+`assembleDebug`, and `assembleRelease`: `BUILD SUCCESSFUL in 16s` with 87 tasks
+(2 executed, 85 up-to-date). The SDK XML version warning and Gradle 10
+deprecation warning remain non-fatal and unchanged.
