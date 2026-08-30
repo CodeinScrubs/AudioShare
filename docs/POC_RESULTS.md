@@ -112,7 +112,7 @@ reported:
 
 ```text
 capture_mode=1 global_hresult=0x00000000
-pcm_bytes=785280 nonzero_pcm_bytes=135161
+pcm_bytes=783360 nonzero_pcm_bytes=134857
 active_endpoint_count=0 endpoint_dropped_frames=0 endpoint_underrun_frames=0 endpoint_discontinuities=0 endpoint_rebuilds=0
 EXIT=0
 ```
@@ -132,7 +132,7 @@ compatibility mode plus non-zero signal:
 
 ```text
 capture_mode=2 global_hresult=0x80004001
-pcm_bytes=503040 nonzero_pcm_bytes=86336
+pcm_bytes=497280 nonzero_pcm_bytes=85692
 active_endpoint_count=1 endpoint_dropped_frames=67200 endpoint_underrun_frames=0 endpoint_discontinuities=1 endpoint_rebuilds=0
 MULTI_EXIT=0
 ```
@@ -143,7 +143,7 @@ endpoint mode plus non-zero signal:
 
 ```text
 capture_mode=3 global_hresult=0x80004001
-pcm_bytes=789120 nonzero_pcm_bytes=135804
+pcm_bytes=787200 nonzero_pcm_bytes=135498
 active_endpoint_count=0 endpoint_dropped_frames=0 endpoint_underrun_frames=0 endpoint_discontinuities=0 endpoint_rebuilds=0
 DEFAULT_EXIT=0
 ```
@@ -219,8 +219,14 @@ Implemented and locally checked without claiming hardware behavior:
   flags, and its native target configures and builds with portable MinGW;
 - Dart ADB commands have structured results, bounded output and timeouts,
   secret redaction, exact resource cleanup, and isolated child environments;
-- supervised `adb track-devices -l` triggers refreshes, with a 15-second
-  recovery poll;
+- package validation runs before device work; supervised `adb track-devices -l`
+  triggers refreshes, with a 15-second recovery poll;
+- the explicit generation-owned connection supervisor automatically selects one
+  authorized USB phone, continues unauthorized-to-authorized transitions without
+  restart, treats missing companion as an explicit install state, rejects stale
+  native callbacks, and retries transient failures with bounded backoff;
+- the host waits for a non-inactive native capture mode before reporting
+  `streaming`;
 - Flutter unit tests pass device-state/transport parsing,
   no-metadata-on-network enforcement, companion discovery, token redaction,
   dynamic forward parsing, and exact cleanup;
@@ -235,12 +241,15 @@ host checks now pass:
 flutter pub get
 flutter gen-l10n
 flutter analyze: No issues found
-flutter test: 5 tests passed
+flutter test: 13 tests passed
 ```
 
 The tests cover isolated ADB environment construction, USB/state parsing,
 non-USB fail-closed behavior, companion selection, secret redaction, dynamic
-forward parsing, and exact cleanup. A Windows Debug build was attempted, but
+forward parsing, exact cleanup, startup failure recovery, zero-click single-phone
+selection, authorization recovery, explicit companion installation, stale
+callback rejection, deliberate-disconnect suppression, bounded retry, and native
+capture readiness. A Windows Debug build was attempted, but
 Flutter correctly refused because the detected Visual Studio 2026 Insiders
 installation lacks the Desktop C++ workload components, CMake tools, and Windows
 10 SDK required by Flutter. No MSVC or Flutter Windows artifact is claimed.

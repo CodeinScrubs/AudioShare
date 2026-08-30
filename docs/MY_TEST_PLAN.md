@@ -10,10 +10,11 @@ pass/fail evidence. A test is not passed merely because the app launches.
 2. Connect the Samsung with a data cable but do not authorize it. Confirm the UI
    says to unlock the phone and approve USB debugging.
 3. Approve the PC without restarting AudioShare. Confirm the device changes to
-   authorized USB and becomes selectable.
-4. Select Connect. If the companion is absent, use **Install companion** and
-   confirm Android shows the app afterward.
-5. Connect and play a Windows system sound. Confirm it plays on the phone speaker.
+   authorized USB and the host checks it automatically.
+4. If the companion is absent, use **Install companion** and confirm Android
+   shows the app afterward. Do not press Connect for the normal single-phone path.
+5. Confirm the host automatically launches the companion and reaches streaming,
+   then play a Windows system sound and confirm it plays on the phone speaker.
 6. Record the capture label. On supported Windows it should say **global mode**;
    on older compatibility systems it should say **all active outputs** with the
    endpoint count; **default output** means the last-resort branch.

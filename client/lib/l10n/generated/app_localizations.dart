@@ -116,6 +116,24 @@ abstract class AppLocalizations {
   /// **'No devices found'**
   String get noDevices;
 
+  /// No description provided for @waitingForPhone.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect an Android phone by USB'**
+  String get waitingForPhone;
+
+  /// No description provided for @phoneReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorized USB phone is ready'**
+  String get phoneReady;
+
+  /// No description provided for @retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get retry;
+
   /// No description provided for @connect.
   ///
   /// In en, this message translates to:
@@ -230,10 +248,34 @@ abstract class AppLocalizations {
   /// **'Starting system-audio capture'**
   String get phaseInitializingCapture;
 
+  /// No description provided for @phaseInitializing.
+  ///
+  /// In en, this message translates to:
+  /// **'Validating the portable package'**
+  String get phaseInitializing;
+
+  /// No description provided for @phaseReconnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection interrupted; retrying automatically'**
+  String get phaseReconnecting;
+
+  /// No description provided for @phaseDisconnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleaning up the USB audio session'**
+  String get phaseDisconnecting;
+
+  /// No description provided for @phaseFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection failed; see diagnostics'**
+  String get phaseFailed;
+
   /// No description provided for @autoConnectLastDevice.
   ///
   /// In en, this message translates to:
-  /// **'Automatically connect to the last used device'**
+  /// **'Automatically connect to an authorized USB phone'**
   String get autoConnectLastDevice;
 
   /// No description provided for @language.
@@ -271,6 +313,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connection failed'**
   String get connectionFailedTitle;
+
+  /// No description provided for @packageValidationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The portable package is incomplete or ADB could not start.'**
+  String get packageValidationFailed;
+
+  /// No description provided for @adbCommandFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'ADB could not inspect the connected phone.'**
+  String get adbCommandFailed;
+
+  /// No description provided for @companionCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The Android companion could not be checked.'**
+  String get companionCheckFailed;
+
+  /// No description provided for @companionInstallFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The bundled Android companion could not be installed.'**
+  String get companionInstallFailed;
+
+  /// No description provided for @companionLaunchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The Android companion could not be started.'**
+  String get companionLaunchFailed;
+
+  /// No description provided for @forwardCreationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The USB-local ADB transport could not be created.'**
+  String get forwardCreationFailed;
+
+  /// No description provided for @forwardCleanupFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The owned ADB transport mapping could not be removed.'**
+  String get forwardCleanupFailed;
+
+  /// No description provided for @transportStartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The Windows outbound USB transport could not start.'**
+  String get transportStartFailed;
+
+  /// No description provided for @transportHandshakeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The authenticated USB audio handshake failed.'**
+  String get transportHandshakeFailed;
 
   /// No description provided for @captureInitializationFailed.
   ///

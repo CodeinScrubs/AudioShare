@@ -122,6 +122,15 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
 
   String _errorDescription(AppLocalizations l10n, UiError error) {
     final description = switch (error.type) {
+      UiErrorType.packageValidationFailed => l10n.packageValidationFailed,
+      UiErrorType.adbCommandFailed => l10n.adbCommandFailed,
+      UiErrorType.companionCheckFailed => l10n.companionCheckFailed,
+      UiErrorType.companionInstallFailed => l10n.companionInstallFailed,
+      UiErrorType.companionLaunchFailed => l10n.companionLaunchFailed,
+      UiErrorType.forwardCreationFailed => l10n.forwardCreationFailed,
+      UiErrorType.forwardCleanupFailed => l10n.forwardCleanupFailed,
+      UiErrorType.transportStartFailed => l10n.transportStartFailed,
+      UiErrorType.transportHandshakeFailed => l10n.transportHandshakeFailed,
       UiErrorType.captureInitializationFailed =>
         l10n.captureInitializationFailed,
       UiErrorType.captureStopped => l10n.captureStopped,
@@ -224,7 +233,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
       case 0:
         return const Center(child: CircularProgressIndicator());
       case 1:
-        return Center(child: Text(l10n.noDevices));
+        return Center(child: Text(l10n.waitingForPhone));
       case 2:
         return ListView.separated(
           itemCount: _dataSource.devices.length,
@@ -255,8 +264,15 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                     : '${device.manufacturer} ${device.model}'.trim();
             final phase = _dataSource.getConnectionPhase(device.deviceId);
             final phaseStatus = switch (phase) {
+              ConnectionPhase.initializing => l10n.phaseInitializing,
+              ConnectionPhase.waitingForPhone => l10n.waitingForPhone,
+              ConnectionPhase.phoneUnauthorized => l10n.usbUnauthorized,
+              ConnectionPhase.phoneOffline => l10n.usbOffline,
+              ConnectionPhase.phoneReady => l10n.phoneReady,
               ConnectionPhase.checkingAdb => l10n.phaseCheckingAdb,
               ConnectionPhase.checkingCompanion => l10n.phaseCheckingCompanion,
+              ConnectionPhase.companionMissing => l10n.installCompanion,
+              ConnectionPhase.installingCompanion => l10n.installingCompanion,
               ConnectionPhase.creatingForward => l10n.phaseCreatingForward,
               ConnectionPhase.startingCompanion => l10n.phaseStartingCompanion,
               ConnectionPhase.connectingTransport =>
@@ -264,6 +280,9 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
               ConnectionPhase.handshaking => l10n.phaseHandshaking,
               ConnectionPhase.initializingCapture =>
                 l10n.phaseInitializingCapture,
+              ConnectionPhase.reconnecting => l10n.phaseReconnecting,
+              ConnectionPhase.disconnecting => l10n.phaseDisconnecting,
+              ConnectionPhase.failed => l10n.phaseFailed,
               _ => null,
             };
             final deviceStatus = switch (device.adbState) {
@@ -346,6 +365,32 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
               ),
             );
           },
+        );
+      case 3:
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.inventory_2_outlined, size: 44),
+              const SizedBox(height: 16),
+              Text(
+                l10n.packageValidationFailed,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                _dataSource.startupFailure,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _dataSource.retryStartup,
+                child: Text(l10n.retry),
+              ),
+            ],
+          ),
         );
       default:
         return const SizedBox.shrink();

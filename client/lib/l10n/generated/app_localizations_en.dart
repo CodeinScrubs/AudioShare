@@ -18,6 +18,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noDevices => 'No devices found';
 
   @override
+  String get waitingForPhone => 'Connect an Android phone by USB';
+
+  @override
+  String get phoneReady => 'Authorized USB phone is ready';
+
+  @override
+  String get retry => 'Retry';
+
+  @override
   String get connect => 'Connect';
 
   @override
@@ -79,8 +88,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get phaseInitializingCapture => 'Starting system-audio capture';
 
   @override
+  String get phaseInitializing => 'Validating the portable package';
+
+  @override
+  String get phaseReconnecting =>
+      'Connection interrupted; retrying automatically';
+
+  @override
+  String get phaseDisconnecting => 'Cleaning up the USB audio session';
+
+  @override
+  String get phaseFailed => 'Connection failed; see diagnostics';
+
+  @override
   String get autoConnectLastDevice =>
-      'Automatically connect to the last used device';
+      'Automatically connect to an authorized USB phone';
 
   @override
   String get language => 'Language';
@@ -103,6 +125,41 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connectionFailedTitle => 'Connection failed';
+
+  @override
+  String get packageValidationFailed =>
+      'The portable package is incomplete or ADB could not start.';
+
+  @override
+  String get adbCommandFailed => 'ADB could not inspect the connected phone.';
+
+  @override
+  String get companionCheckFailed =>
+      'The Android companion could not be checked.';
+
+  @override
+  String get companionInstallFailed =>
+      'The bundled Android companion could not be installed.';
+
+  @override
+  String get companionLaunchFailed =>
+      'The Android companion could not be started.';
+
+  @override
+  String get forwardCreationFailed =>
+      'The USB-local ADB transport could not be created.';
+
+  @override
+  String get forwardCleanupFailed =>
+      'The owned ADB transport mapping could not be removed.';
+
+  @override
+  String get transportStartFailed =>
+      'The Windows outbound USB transport could not start.';
+
+  @override
+  String get transportHandshakeFailed =>
+      'The authenticated USB audio handshake failed.';
 
   @override
   String get captureInitializationFailed =>

@@ -6,9 +6,11 @@ firewall-independent Windows workflow.
 
 Development status: the Android companion builds and its unit/lint checks pass;
 the Windows capture hierarchy compiles and passed local native integration
-test with non-zero PCM. Physical USB, phone playback, firewall-prompt, latency,
-and long-run tests are still required before this fork is release-ready. See
-[POC results](docs/POC_RESULTS.md).
+test with non-zero PCM. The Windows USB connection supervisor is unit-tested for
+zero-click selection, authorization recovery, exact generation ownership, and
+bounded reconnect. Physical USB, phone playback, firewall-prompt, latency, and
+long-run tests are still required before this fork is release-ready. See [POC
+results](docs/POC_RESULTS.md).
 
 ## Architecture
 
@@ -46,11 +48,14 @@ and duplicate mirrored-output suppression still require target-hardware evidence
 2. Enable Android Developer Options and USB debugging.
 3. Connect the phone with a data-capable USB cable.
 4. Unlock the phone and approve **Allow USB debugging?** for this computer.
-5. Start AudioShare. Select the authorized USB phone.
-6. If prompted, choose **Install companion**. This is an explicit one-time ADB
+5. Start AudioShare. If exactly one authorized USB phone is present, it is
+   selected automatically; with multiple phones, choose the intended one.
+6. If shown, choose **Install companion**. This is an explicit one-time ADB
    APK installation; AudioShare never silently installs an app in the background.
-7. Choose **Connect** and confirm that system audio plays through the phone.
-8. Leave automatic reconnection enabled for the remembered phone.
+7. After installation, the host launches the companion, creates the USB-local
+   transport, authenticates it, and starts capture automatically.
+8. Confirm that system audio plays through the phone and leave automatic
+   connection enabled.
 
 The PC must already have a working Android USB/ADB driver. Installing a missing
 driver can require administrator access and is outside AudioShare's control.
@@ -62,8 +67,10 @@ driver can require administrator access and is outside AudioShare's control.
 3. Play sound from any Windows application, including Infinit/idplayer.
 
 The intended final workflow requires no Android UI, IP address, Wi-Fi, Internet,
-firewall approval, or Connect click. That zero-click behavior is implemented but
-not yet hardware-verified.
+firewall approval, or Connect click. That zero-click supervisor behavior is unit
+tested but not yet USB/phone hardware-verified. A deliberate **Disconnect** stays
+disconnected while the current cable session remains; unplug/replug restores the
+normal automatic path.
 
 ## Build from source
 

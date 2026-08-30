@@ -67,6 +67,48 @@ class AudioCaptureError {
   final String message;
 }
 
+/// Testable boundary between the Dart connection supervisor and the native
+/// Windows capture/transport DLL.
+///
+/// Keeping this boundary small lets the supervisor's generation, retry, and
+/// device-state behavior be exercised without loading a Windows DLL in unit
+/// tests. [AudioCaptureService] remains the production FFI implementation.
+abstract interface class AudioCaptureController {
+  int get droppedNativeChunks;
+  int get androidReceivedFrames;
+  int get androidDroppedFrames;
+  int get androidQueueDepth;
+  int get androidBufferFrames;
+  WindowsCaptureMode get captureMode;
+  int get globalLoopbackHresult;
+  int get activeEndpointCount;
+  int get endpointDroppedFrames;
+  int get endpointUnderrunFrames;
+  int get endpointDiscontinuities;
+  int get endpointRebuildCount;
+
+  bool initialize();
+
+  bool connectToForward(
+    int port,
+    String tokenHex,
+    void Function(String status) onConnect,
+  );
+
+  bool start();
+
+  AudioCaptureError? takeLastError({
+    int fallbackCode = -1,
+    String fallbackMessage = 'Unknown audio capture error',
+  });
+
+  AudioCaptureError? pollLastError();
+
+  void stop();
+  void cleanup();
+  void dispose();
+}
+
 AudioCaptureService? _activeService;
 
 void _handleConnect(Pointer<Int8> connectCodePtr) {
@@ -85,7 +127,7 @@ void _handleConnect(Pointer<Int8> connectCodePtr) {
   }
 }
 
-class AudioCaptureService {
+class AudioCaptureService implements AudioCaptureController {
   DynamicLibrary? _lib;
   AudioCaptureInitializeDart? _initialize;
   AudioCaptureConnectDart? _connect;
@@ -202,6 +244,7 @@ class AudioCaptureService {
   }
 
   /// Initialize Windows system-audio capture.
+  @override
   bool initialize() {
     if (_initialized) return true;
     if (_initialize == null) return false;
@@ -212,6 +255,7 @@ class AudioCaptureService {
 
   /// Connect outbound to an ADB-owned loopback forward and authenticate the
   /// Android companion. AudioShare never binds or listens on Windows.
+  @override
   bool connectToForward(
     int port,
     String tokenHex,
@@ -231,27 +275,41 @@ class AudioCaptureService {
     }
   }
 
+  @override
   int get droppedNativeChunks => _getDroppedChunks?.call() ?? 0;
+  @override
   int get androidReceivedFrames => _getAndroidReceivedFrames?.call() ?? 0;
+  @override
   int get androidDroppedFrames => _getAndroidDroppedFrames?.call() ?? 0;
+  @override
   int get androidQueueDepth => _getAndroidQueueDepth?.call() ?? 0;
+  @override
   int get androidBufferFrames => _getAndroidBufferFrames?.call() ?? 0;
+  @override
   WindowsCaptureMode get captureMode => WindowsCaptureMode.fromNative(
         _getCaptureMode?.call() ?? 0,
       );
+  @override
   int get globalLoopbackHresult => _getGlobalLoopbackHresult?.call() ?? 0;
+  @override
   int get activeEndpointCount => _getActiveEndpointCount?.call() ?? 0;
+  @override
   int get endpointDroppedFrames => _getEndpointDroppedFrames?.call() ?? 0;
+  @override
   int get endpointUnderrunFrames => _getEndpointUnderrunFrames?.call() ?? 0;
+  @override
   int get endpointDiscontinuities => _getEndpointDiscontinuities?.call() ?? 0;
+  @override
   int get endpointRebuildCount => _getEndpointRebuildCount?.call() ?? 0;
 
   /// Start audio capture after the Android transport handshake completes.
+  @override
   bool start() {
     if (!_initialized || _start == null) return false;
     return _start!() != 0;
   }
 
+  @override
   AudioCaptureError? takeLastError({
     int fallbackCode = -1,
     String fallbackMessage = 'Unknown audio capture error',
@@ -285,16 +343,19 @@ class AudioCaptureService {
     );
   }
 
+  @override
   AudioCaptureError? pollLastError() {
     if ((_getLastErrorCode?.call() ?? 0) == 0) return null;
     return takeLastError();
   }
 
+  @override
   void stop() {
     if (!_initialized || _stop == null) return;
     _stop!();
   }
 
+  @override
   void cleanup() {
     if (!_initialized || _cleanup == null) return;
     _cleanup!();
@@ -303,6 +364,7 @@ class AudioCaptureService {
     _initialized = false;
   }
 
+  @override
   void dispose() {
     cleanup();
   }

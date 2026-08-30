@@ -18,6 +18,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noDevices => '未找到设备';
 
   @override
+  String get waitingForPhone => '请通过 USB 连接 Android 手机';
+
+  @override
+  String get phoneReady => '已授权的 USB 手机已就绪';
+
+  @override
+  String get retry => '重试';
+
+  @override
   String get connect => '连接';
 
   @override
@@ -77,7 +86,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get phaseInitializingCapture => '正在启动系统音频捕获';
 
   @override
-  String get autoConnectLastDevice => '自动连接上次使用的设备';
+  String get phaseInitializing => '正在验证便携包';
+
+  @override
+  String get phaseReconnecting => '连接已中断，正在自动重试';
+
+  @override
+  String get phaseDisconnecting => '正在清理 USB 音频会话';
+
+  @override
+  String get phaseFailed => '连接失败，请查看诊断信息';
+
+  @override
+  String get autoConnectLastDevice => '自动连接已授权的 USB 手机';
 
   @override
   String get language => '语言';
@@ -100,6 +121,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connectionFailedTitle => '连接失败';
+
+  @override
+  String get packageValidationFailed => '便携包不完整或 ADB 无法启动。';
+
+  @override
+  String get adbCommandFailed => 'ADB 无法检查已连接的手机。';
+
+  @override
+  String get companionCheckFailed => '无法检查 Android 配套应用。';
+
+  @override
+  String get companionInstallFailed => '无法安装随附的 Android 配套应用。';
+
+  @override
+  String get companionLaunchFailed => '无法启动 Android 配套应用。';
+
+  @override
+  String get forwardCreationFailed => '无法创建 USB 本地 ADB 传输。';
+
+  @override
+  String get forwardCleanupFailed => '无法删除本会话的 ADB 传输映射。';
+
+  @override
+  String get transportStartFailed => 'Windows 出站 USB 传输无法启动。';
+
+  @override
+  String get transportHandshakeFailed => 'USB 音频身份验证握手失败。';
 
   @override
   String get captureInitializationFailed => '无法初始化系统音频捕获。';

@@ -69,8 +69,10 @@ One time:
 
 Daily:
 
-- supervise `adb track-devices -l` with restart/backoff;
-- classify transports and react only to the remembered authorized USB phone;
+- validate the extracted ADB/APK runtime before starting device work;
+- supervise `adb track-devices -l` with a polling recovery path;
+- classify transports, prefer the remembered authorized USB phone, and select
+  the sole authorized USB phone automatically when no remembered choice exists;
 - check package/protocol compatibility;
 - generate a unique short socket name and 256-bit token;
 - create `forward --no-rebind tcp:0 localabstract:<socket>`;
@@ -78,6 +80,13 @@ Daily:
 - connect outbound to the returned `127.0.0.1` port and authenticate;
 - start system endpoint loopback and stream framed PCM; and
 - remove only this session's exact mapping during teardown.
+
+Every asynchronous connection attempt carries a monotonically increasing
+generation. A stale native READY callback cannot revive an unplugged or replaced
+session. Missing companion is a stable explicit-install state; other transient
+phase failures clean up the owned mapping and retry with bounded exponential
+backoff. The UI does not report `streaming` until the native DLL exposes a
+non-inactive capture mode.
 
 The launch ordering will be finalized by the device POC. A forward can be
 created before or after the Android socket exists, but the production state

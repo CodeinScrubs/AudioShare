@@ -230,7 +230,40 @@ class AdbForwardSession {
   final int generation;
 }
 
-class AdbService {
+/// Testable boundary used by the Windows connection supervisor.
+///
+/// The production implementation below owns process execution and ADB device
+/// tracking. Tests can provide deterministic device snapshots without starting
+/// or mutating the user's ambient ADB server.
+abstract interface class AdbController {
+  String get executablePath;
+
+  Future<void> validateRuntime();
+  Future<List<DeviceModel>> devices();
+  Stream<void> deviceChanges();
+  Future<CompanionInstallation?> findCompanion(String deviceId);
+  String? bundledCompanionApkPath();
+  Future<CompanionInstallation> installBundledCompanion(String deviceId);
+
+  Future<void> launchCompanion({
+    required String deviceId,
+    required String socketName,
+    required String tokenHex,
+    required int generation,
+    required CompanionInstallation installation,
+  });
+
+  Future<AdbForwardSession> createForward({
+    required String deviceId,
+    required String socketName,
+    required int generation,
+  });
+
+  Future<void> removeForward(AdbForwardSession session);
+  void dispose();
+}
+
+class AdbService implements AdbController {
   AdbService({AdbCommandRunner? runner, String? adbPath})
       : _runner = runner ?? ProcessAdbCommandRunner(),
         _adbPath = adbPath ?? _defaultAdbPath();
@@ -246,6 +279,7 @@ class AdbService {
     return '$executableDirectory${Platform.pathSeparator}adb.exe';
   }
 
+  @override
   String get executablePath => _adbPath;
 
   Future<AdbCommandResult> run(AdbCommandRequest request) async {
@@ -261,17 +295,30 @@ class AdbService {
     return result;
   }
 
+  @override
   Future<void> validateRuntime() async {
     final executable = File(_adbPath);
     if (!executable.existsSync()) {
-      throw StateError('Bundled ADB is missing: $_adbPath');
+      throw StateError(
+        'Package incomplete. Extract the complete ZIP first. '
+        'Bundled ADB is missing: $_adbPath',
+      );
     }
     final directory = executable.parent.path;
     for (final name in ['AdbWinApi.dll', 'AdbWinUsbApi.dll']) {
       final file = File('$directory${Platform.pathSeparator}$name');
       if (!file.existsSync()) {
-        throw StateError('Bundled ADB dependency is missing: ${file.path}');
+        throw StateError(
+          'Package incomplete. Extract the complete ZIP first. '
+          'Bundled ADB dependency is missing: ${file.path}',
+        );
       }
+    }
+    if (bundledCompanionApkPath() == null) {
+      throw StateError(
+        'Package incomplete. Extract the complete ZIP first. '
+        'The bundled Android companion APK is missing.',
+      );
     }
     await _required(
       const AdbCommandRequest(
@@ -282,6 +329,7 @@ class AdbService {
     );
   }
 
+  @override
   Future<List<DeviceModel>> devices() async {
     final result = await _required(
       const AdbCommandRequest(
@@ -367,6 +415,7 @@ class AdbService {
   /// structured parser and source of truth. If ADB exits or cannot start, the
   /// tracker restarts after a bounded delay while the caller retains a slow
   /// polling fallback.
+  @override
   Stream<void> deviceChanges() async* {
     while (!_disposed) {
       Process? tracker;
@@ -457,6 +506,7 @@ class AdbService {
     return match == null ? ('', '') : (match.group(1)!, match.group(2)!);
   }
 
+  @override
   Future<CompanionInstallation?> findCompanion(String deviceId) async {
     for (final installation in const [
       CompanionInstallation.release,
@@ -489,6 +539,7 @@ class AdbService {
     return null;
   }
 
+  @override
   String? bundledCompanionApkPath() {
     final executableDirectory = File(Platform.resolvedExecutable).parent.path;
     final androidDirectory = Directory(
@@ -506,6 +557,7 @@ class AdbService {
     return null;
   }
 
+  @override
   Future<CompanionInstallation> installBundledCompanion(String deviceId) async {
     final apkPath = bundledCompanionApkPath();
     if (apkPath == null) {
@@ -546,6 +598,7 @@ class AdbService {
     return installed;
   }
 
+  @override
   Future<void> launchCompanion({
     required String deviceId,
     required String socketName,
@@ -601,6 +654,7 @@ class AdbService {
     }
   }
 
+  @override
   Future<AdbForwardSession> createForward({
     required String deviceId,
     required String socketName,
@@ -638,6 +692,7 @@ class AdbService {
     );
   }
 
+  @override
   Future<void> removeForward(AdbForwardSession session) async {
     final result = await run(
       AdbCommandRequest(
@@ -661,6 +716,7 @@ class AdbService {
     }
   }
 
+  @override
   void dispose() {
     _disposed = true;
     _deviceTrackerProcess?.kill(ProcessSignal.sigkill);
