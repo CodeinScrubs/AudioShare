@@ -286,7 +286,7 @@ host checks now pass:
 flutter pub get
 flutter gen-l10n
 flutter analyze: No issues found
-flutter test: 19 tests passed
+flutter test: 20 tests passed
 ```
 
 The tests cover isolated ADB environment construction, real-Windows-style USB/state parsing,
@@ -363,7 +363,7 @@ heartbeat-failure fixes. Its SHA-256 is:
 The final clean serialized Android regression reran `testDebugUnitTest`,
 `lintRelease`, `assembleDebug`, and `assembleRelease`: `BUILD SUCCESSFUL in
 3m 14s` with 88 tasks executed under the Gradle 9.7.1 wrapper, including three
-live-edge queue tests. Flutter analysis and all 19 host tests also passed.
+live-edge queue tests. Flutter analysis and all 20 host tests also passed.
 The project's Gradle 10 deprecation warning was removed by migrating the Android
 Groovy DSL to assignment syntax. Hosted CI is added to keep the wrapper, Android
 build, Flutter analysis/tests, and MSVC Windows build under continuous verification.

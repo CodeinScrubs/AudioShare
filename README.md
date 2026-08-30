@@ -10,7 +10,7 @@ ADB-forwarded 60-second screen-off stream with 2,880,000 exact PCM frames,
 enforced speaker route, zero drops, wake-lock continuity, and exact cleanup. The
 Windows capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
-non-zero PCM. Flutter analysis and 19 supervisor/lifecycle/security tests pass. A physical
+non-zero PCM. Flutter analysis and 20 supervisor/lifecycle/security tests pass. A physical
 Samsung audible-output/USB-cable run, restricted-PC firewall check, measured
 latency, and long-run test remain the final hardware gates. See [POC results](docs/POC_RESULTS.md).
 
