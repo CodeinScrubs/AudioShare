@@ -9,11 +9,7 @@ class FakeAdbRunner implements AdbCommandRunner {
   final responses = <({int exitCode, String stdout, String stderr})>[];
 
   void enqueue({int exitCode = 0, String stdout = '', String stderr = ''}) {
-    responses.add((
-      exitCode: exitCode,
-      stdout: stdout,
-      stderr: stderr,
-    ));
+    responses.add((exitCode: exitCode, stdout: stdout, stderr: stderr));
   }
 
   @override
@@ -56,28 +52,30 @@ Future<Directory> createCompanionFixture() async {
 }
 
 void main() {
-  test('USB-only environment removes ambient ADB routing case-insensitively',
-      () {
-    final result = buildUsbOnlyAdbEnvironment({
-      'Path': 'example',
-      'adb_server_socket': 'tcp:host.example:5037',
-      'ANDROID_ADB_SERVER_ADDRESS': 'host.example',
-      'ANDROID_ADB_SERVER_PORT': '5038',
-      'ANDROID_SERIAL': 'host.example:5555',
-    });
+  test(
+    'USB-only environment removes ambient ADB routing case-insensitively',
+    () {
+      final result = buildUsbOnlyAdbEnvironment({
+        'Path': 'example',
+        'adb_server_socket': 'tcp:host.example:5037',
+        'ANDROID_ADB_SERVER_ADDRESS': 'host.example',
+        'ANDROID_ADB_SERVER_PORT': '5038',
+        'ANDROID_SERIAL': 'host.example:5555',
+      });
 
-    expect(result['Path'], 'example');
-    expect(
-      result.keys.map((key) => key.toUpperCase()),
-      isNot(contains('ADB_SERVER_SOCKET')),
-    );
-    expect(result, isNot(contains('ANDROID_ADB_SERVER_ADDRESS')));
-    expect(result, isNot(contains('ANDROID_ADB_SERVER_PORT')));
-    expect(result, isNot(contains('ANDROID_SERIAL')));
-    expect(result['ADB_MDNS'], '0');
-    expect(result['ADB_MDNS_AUTO_CONNECT'], '0');
-    expect(result['ADB_EMU'], '0');
-  });
+      expect(result['Path'], 'example');
+      expect(
+        result.keys.map((key) => key.toUpperCase()),
+        isNot(contains('ADB_SERVER_SOCKET')),
+      );
+      expect(result, isNot(contains('ANDROID_ADB_SERVER_ADDRESS')));
+      expect(result, isNot(contains('ANDROID_ADB_SERVER_PORT')));
+      expect(result, isNot(contains('ANDROID_SERIAL')));
+      expect(result['ADB_MDNS'], '0');
+      expect(result['ADB_MDNS_AUTO_CONNECT'], '0');
+      expect(result['ADB_EMU'], '0');
+    },
+  );
 
   test('Windows device parser recognizes USB without a usb devpath', () async {
     final runner = FakeAdbRunner()
@@ -162,80 +160,83 @@ al:36
     expect(parseCompanionVersionCode('otherVersionCode=2'), isNull);
   });
 
-  test('companion handshake inputs are redacted and cleanup is exact',
-      () async {
-    final companionDirectory = await createCompanionFixture();
-    final runner = FakeAdbRunner()
-      ..enqueue(exitCode: 1)
-      ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-      ..enqueue(stdout: '    versionCode=2 minSdk=26 targetSdk=36\n')
-      ..enqueue(
-        stdout: '$_fixtureApkHash  /data/app/debug/base.apk\n',
-      )
-      ..enqueue(stdout: '43210\n');
-    final adb = AdbService(
-      runner: runner,
-      adbPath: 'fake-adb',
-      companionDirectoryPath: companionDirectory.path,
-    );
-    const token =
-        '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
-
-    final installation = await adb.findCompanion('USB123');
-    expect(installation, CompanionInstallation.debug);
-    final forward = await adb.createForward(
-      deviceId: 'USB123',
-      socketName: 'as_1_test',
-      generation: 7,
-    );
-    expect(forward.hostPort, 43210);
-
-    runner.enqueue();
-    await adb.launchCompanion(
-      deviceId: 'USB123',
-      socketName: 'as_1_test',
-      tokenHex: token,
-      generation: 7,
-      installation: installation!,
-    );
-    expect(runner.requests.last.safeArguments, contains('<redacted>'));
-    expect(runner.requests.last.safeArguments, isNot(contains(token)));
-
-    runner.enqueue();
-    await adb.removeForward(forward);
-    expect(
-      runner.requests.last.arguments,
-      ['-s', 'USB123', 'forward', '--remove', 'tcp:43210'],
-    );
-    expect(runner.requests.last.arguments, isNot(contains('--remove-all')));
-    adb.dispose();
-    await companionDirectory.delete(recursive: true);
-  });
-
-  test('repackaged installed companion is rejected by exact APK hash',
-      () async {
-    final companionDirectory = await createCompanionFixture();
-    final runner = FakeAdbRunner()
-      ..enqueue(exitCode: 1)
-      ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-      ..enqueue(stdout: '    versionCode=2 minSdk=26 targetSdk=36\n')
-      ..enqueue(
-        stdout: '$_wrongFixtureApkHash  /data/app/debug/base.apk\n',
+  test(
+    'companion handshake inputs are redacted and cleanup is exact',
+    () async {
+      final companionDirectory = await createCompanionFixture();
+      final runner = FakeAdbRunner()
+        ..enqueue(exitCode: 1)
+        ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
+        ..enqueue(stdout: '    versionCode=2 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '$_fixtureApkHash  /data/app/debug/base.apk\n')
+        ..enqueue(stdout: '43210\n');
+      final adb = AdbService(
+        runner: runner,
+        adbPath: 'fake-adb',
+        companionDirectoryPath: companionDirectory.path,
       );
-    final adb = AdbService(
-      runner: runner,
-      adbPath: 'fake-adb',
-      companionDirectoryPath: companionDirectory.path,
-    );
+      const token =
+          '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
 
-    expect(await adb.findCompanion('USB123'), isNull);
-    expect(
-      runner.requests.map((request) => request.operation),
-      contains('verify installed Android companion APK'),
-    );
-    adb.dispose();
-    await companionDirectory.delete(recursive: true);
-  });
+      final installation = await adb.findCompanion('USB123');
+      expect(installation, CompanionInstallation.debug);
+      final forward = await adb.createForward(
+        deviceId: 'USB123',
+        socketName: 'as_1_test',
+        generation: 7,
+      );
+      expect(forward.hostPort, 43210);
+
+      runner.enqueue();
+      await adb.launchCompanion(
+        deviceId: 'USB123',
+        socketName: 'as_1_test',
+        tokenHex: token,
+        generation: 7,
+        installation: installation!,
+      );
+      expect(runner.requests.last.safeArguments, contains('<redacted>'));
+      expect(runner.requests.last.safeArguments, isNot(contains(token)));
+
+      runner.enqueue();
+      await adb.removeForward(forward);
+      expect(runner.requests.last.arguments, [
+        '-s',
+        'USB123',
+        'forward',
+        '--remove',
+        'tcp:43210',
+      ]);
+      expect(runner.requests.last.arguments, isNot(contains('--remove-all')));
+      adb.dispose();
+      await companionDirectory.delete(recursive: true);
+    },
+  );
+
+  test(
+    'repackaged installed companion is rejected by exact APK hash',
+    () async {
+      final companionDirectory = await createCompanionFixture();
+      final runner = FakeAdbRunner()
+        ..enqueue(exitCode: 1)
+        ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
+        ..enqueue(stdout: '    versionCode=2 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '$_wrongFixtureApkHash  /data/app/debug/base.apk\n');
+      final adb = AdbService(
+        runner: runner,
+        adbPath: 'fake-adb',
+        companionDirectoryPath: companionDirectory.path,
+      );
+
+      expect(await adb.findCompanion('USB123'), isNull);
+      expect(
+        runner.requests.map((request) => request.operation),
+        contains('verify installed Android companion APK'),
+      );
+      adb.dispose();
+      await companionDirectory.delete(recursive: true);
+    },
+  );
 
   test('outdated installed companion is offered as missing', () async {
     final runner = FakeAdbRunner()

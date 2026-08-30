@@ -20,10 +20,8 @@ class FileConnectionPreferences implements ConnectionPreferences {
   String get lastDeviceId => Prefs.getString(_lastDeviceIdKey);
 
   @override
-  bool get autoConnectEnabled => Prefs.getBool(
-        _autoConnectKey,
-        defaultValue: true,
-      );
+  bool get autoConnectEnabled =>
+      Prefs.getBool(_autoConnectKey, defaultValue: true);
 
   @override
   void setLastDeviceId(String value) {

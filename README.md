@@ -79,8 +79,8 @@ normal automatic path.
 
 ## Build from source
 
-Host prerequisites are Flutter 3.x and Visual Studio 2022 or newer with Desktop
-C++. From `client`:
+The tested host toolchain is Flutter 3.47.2 / Dart 3.13.2 and Visual Studio 2022
+or newer with Desktop C++. From `client`:
 
 ```powershell
 flutter pub get
@@ -91,14 +91,23 @@ flutter build windows --debug
 ```
 
 Debug builds bundle the clearly labeled version-code 2 debug companion APK. A
-distributable release must use a stable signing key and provide the signed APK
-explicitly. Configuration fails unless Android SDK `apkanalyzer` and `apksigner`
-confirm its signature, package ID, and compatible version:
+distributable release must use a stable signing key and provide both the signed
+APK and its pinned signer-certificate SHA-256 explicitly. Configuration fails
+unless Android SDK `apkanalyzer` and `apksigner` confirm the signature, exact
+certificate, package ID, and compatible version:
 
 ```powershell
 $env:AUDIOSHARE_COMPANION_APK = 'C:\absolute\path\audioshare-companion.apk'
+$env:AUDIOSHARE_COMPANION_CERT_SHA256 = '<64 hex digits from apksigner --print-certs>'
 flutter build windows --release
+..\tools\package_windows_release.ps1 `
+  -BundleDirectory .\build\windows\x64\runner\Release `
+  -OutputZip .\build\AudioShare-Windows.zip
 ```
+
+The packaging script checks every manifest hash, tests the ZIP after extraction
+to a path containing spaces, and proves that missing or altered files are
+rejected. It writes the archive SHA-256 beside the ZIP.
 
 The sibling `client android app` Git repository owns the native companion:
 

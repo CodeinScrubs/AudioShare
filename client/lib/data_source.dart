@@ -91,13 +91,13 @@ class DataSource extends ChangeNotifier {
     Duration reconnectBaseDelay = const Duration(seconds: 1),
     Duration reconnectMaxDelay = const Duration(seconds: 15),
     bool enableBackgroundTimers = true,
-  })  : _adb = adb ?? AdbService(),
-        _audioCapture = audioCapture ?? AudioCaptureService(),
-        _preferences = preferences ?? FileConnectionPreferences(),
-        _connectionTimeout = connectionTimeout,
-        _captureStartupTimeout = captureStartupTimeout,
-        _reconnectBaseDelay = reconnectBaseDelay,
-        _reconnectMaxDelay = reconnectMaxDelay {
+  }) : _adb = adb ?? AdbService(),
+       _audioCapture = audioCapture ?? AudioCaptureService(),
+       _preferences = preferences ?? FileConnectionPreferences(),
+       _connectionTimeout = connectionTimeout,
+       _captureStartupTimeout = captureStartupTimeout,
+       _reconnectBaseDelay = reconnectBaseDelay,
+       _reconnectMaxDelay = reconnectMaxDelay {
     _lastDeviceId = _preferences.lastDeviceId;
     _lastCheck = _preferences.autoConnectEnabled;
     _requestDevicePoll();
@@ -285,10 +285,7 @@ class DataSource extends ChangeNotifier {
             .where((device) => device.deviceId == activeDevice)
             .firstOrNull;
         if (activeSnapshot == null || !activeSnapshot.connectableUsb) {
-          await _handleDeviceLost(
-            activeDevice,
-            _passivePhase(activeSnapshot),
-          );
+          await _handleDeviceLost(activeDevice, _passivePhase(activeSnapshot));
         }
       }
 
@@ -445,7 +442,8 @@ class DataSource extends ChangeNotifier {
       error.exception?.toString() ?? '',
     ].join('|');
     final now = DateTime.now();
-    final duplicate = fingerprint == _lastErrorFingerprint &&
+    final duplicate =
+        fingerprint == _lastErrorFingerprint &&
         _lastErrorNotification != null &&
         now.difference(_lastErrorNotification!) < const Duration(seconds: 30);
     if (notifyUser && !duplicate) {
@@ -485,10 +483,10 @@ class DataSource extends ChangeNotifier {
   }
 
   String _randomHex(int byteCount) => List<String>.generate(
-        byteCount,
-        (_) => _secureRandom.nextInt(256).toRadixString(16).padLeft(2, '0'),
-        growable: false,
-      ).join();
+    byteCount,
+    (_) => _secureRandom.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    growable: false,
+  ).join();
 
   void connectDevice(String deviceId) {
     _manuallySuppressedDeviceIds.remove(deviceId);
@@ -508,7 +506,8 @@ class DataSource extends ChangeNotifier {
         const UiError(
           type: UiErrorType.connectDeviceFailed,
           phase: ConnectionPhase.phoneReady,
-          exception: 'Select an authorized USB device. Network and emulator '
+          exception:
+              'Select an authorized USB device. Network and emulator '
               'ADB transports are not accepted in automatic mode.',
         ),
       );
@@ -639,7 +638,8 @@ class DataSource extends ChangeNotifier {
             const UiError(
               type: UiErrorType.transportHandshakeFailed,
               phase: ConnectionPhase.handshaking,
-              exception: 'Timed out while waiting for the Android companion '
+              exception:
+                  'Timed out while waiting for the Android companion '
                   'transport handshake.',
             ),
             retryAutomatically: true,
@@ -754,7 +754,8 @@ class DataSource extends ChangeNotifier {
         const UiError(
           type: UiErrorType.captureStartFailed,
           phase: ConnectionPhase.initializingCapture,
-          exception: 'Windows capture did not become ready before the startup '
+          exception:
+              'Windows capture did not become ready before the startup '
               'deadline.',
         ),
         retryAutomatically: true,
@@ -782,8 +783,9 @@ class DataSource extends ChangeNotifier {
     if (willRetry) _lastAutoDeviceId = '';
     await _cleanupSession(
       forgetRememberedDevice: false,
-      finalPhase:
-          willRetry ? ConnectionPhase.reconnecting : ConnectionPhase.failed,
+      finalPhase: willRetry
+          ? ConnectionPhase.reconnecting
+          : ConnectionPhase.failed,
       targetDeviceId: deviceId,
     );
     if (willRetry && !_disposed) _scheduleReconnect(deviceId);
@@ -796,10 +798,7 @@ class DataSource extends ChangeNotifier {
     final scaledMilliseconds =
         _reconnectBaseDelay.inMilliseconds * (1 << exponent);
     final delay = Duration(
-      milliseconds: min(
-        scaledMilliseconds,
-        _reconnectMaxDelay.inMilliseconds,
-      ),
+      milliseconds: min(scaledMilliseconds, _reconnectMaxDelay.inMilliseconds),
     );
     _reconnectAttempt++;
     final generation = _sessionGeneration;
@@ -839,7 +838,7 @@ class DataSource extends ChangeNotifier {
     _connectionDeadline = null;
     final affectedDeviceIds = <String>{
       ..._connectStateMap.keys,
-      if (targetDeviceId != null) targetDeviceId,
+      ?targetDeviceId,
     };
     for (final deviceId in affectedDeviceIds) {
       if ((_connectStateMap[deviceId] ?? 0) != 0) {

@@ -177,9 +177,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text(
-              l10n.connectionFailedTitle,
-            ),
+            title: Text(l10n.connectionFailedTitle),
             content: SelectableText(_errorDescription(l10n, error)),
             actions: [
               TextButton(
@@ -248,7 +246,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
       case 2:
         return ListView.separated(
           itemCount: _dataSource.devices.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, _) => const Divider(height: 1),
           itemBuilder: (context, index) {
             final device = _dataSource.devices[index];
             final connectState = _dataSource.getConnectState(device.deviceId);
@@ -271,8 +269,8 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
             };
             final deviceName =
                 '${device.manufacturer} ${device.model}'.trim().isEmpty
-                    ? device.deviceId
-                    : '${device.manufacturer} ${device.model}'.trim();
+                ? device.deviceId
+                : '${device.manufacturer} ${device.model}'.trim();
             final phase = _dataSource.getConnectionPhase(device.deviceId);
             final phaseStatus = switch (phase) {
               ConnectionPhase.initializing => l10n.phaseInitializing,
@@ -302,16 +300,16 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
               _ when device.transportType != AdbTransportType.usb =>
                 l10n.ignoredAdbDevice,
               _ when connectState == 2 => switch (_dataSource.captureMode) {
-                  WindowsCaptureMode.globalSystem =>
-                    l10n.streamingGlobalSystemAudio,
-                  WindowsCaptureMode.multiEndpoint =>
-                    l10n.streamingMultiOutputAudio(
-                      _dataSource.activeEndpointCount.toString(),
-                    ),
-                  WindowsCaptureMode.defaultEndpoint =>
-                    l10n.streamingDefaultOutputAudio,
-                  WindowsCaptureMode.inactive => l10n.streamingAllSystemAudio,
-                },
+                WindowsCaptureMode.globalSystem =>
+                  l10n.streamingGlobalSystemAudio,
+                WindowsCaptureMode.multiEndpoint =>
+                  l10n.streamingMultiOutputAudio(
+                    _dataSource.activeEndpointCount.toString(),
+                  ),
+                WindowsCaptureMode.defaultEndpoint =>
+                  l10n.streamingDefaultOutputAudio,
+                WindowsCaptureMode.inactive => l10n.streamingAllSystemAudio,
+              },
               _ when phaseStatus != null => phaseStatus,
               _ when companionMissing => l10n.installCompanion,
               _ =>
@@ -353,22 +351,18 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                       onPressed: companionInstalling
                           ? null
                           : companionMissing && connectEnable
-                              ? () => unawaited(
-                                    _dataSource
-                                        .installCompanion(device.deviceId),
-                                  )
-                              : connectEnable
-                                  ? () {
-                                      if (connectState == 0) {
-                                        _dataSource.connectDevice(
-                                          device.deviceId,
-                                        );
-                                      } else if (connectState == 2) {
-                                        _dataSource
-                                            .disconnectDevice(device.deviceId);
-                                      }
-                                    }
-                                  : null,
+                          ? () => unawaited(
+                              _dataSource.installCompanion(device.deviceId),
+                            )
+                          : connectEnable
+                          ? () {
+                              if (connectState == 0) {
+                                _dataSource.connectDevice(device.deviceId);
+                              } else if (connectState == 2) {
+                                _dataSource.disconnectDevice(device.deviceId);
+                              }
+                            }
+                          : null,
                       child: Text(connectionLabel),
                     ),
                   ),
@@ -385,10 +379,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
             children: [
               const Icon(Icons.inventory_2_outlined, size: 44),
               const SizedBox(height: 16),
-              Text(
-                l10n.packageValidationFailed,
-                textAlign: TextAlign.center,
-              ),
+              Text(l10n.packageValidationFailed, textAlign: TextAlign.center),
               const SizedBox(height: 12),
               SelectableText(
                 _dataSource.startupFailure,

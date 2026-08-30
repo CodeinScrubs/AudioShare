@@ -26,11 +26,10 @@ class CompanionInstallation {
       '$packageName/com.audioshare.usbcompanion.BridgeActivity';
 
   String get bundledApkName => switch (packageName) {
-        'com.audioshare.usbcompanion' => 'audioshare-companion.apk',
-        'com.audioshare.usbcompanion.debug' =>
-          'audioshare-companion-poc-debug.apk',
-        _ => throw StateError('Unsupported companion package: $packageName'),
-      };
+    'com.audioshare.usbcompanion' => 'audioshare-companion.apk',
+    'com.audioshare.usbcompanion.debug' => 'audioshare-companion-poc-debug.apk',
+    _ => throw StateError('Unsupported companion package: $packageName'),
+  };
 
   static const release = CompanionInstallation('com.audioshare.usbcompanion');
   static const debug = CompanionInstallation(
@@ -103,12 +102,12 @@ class AdbCommandRequest {
   final Set<int> sensitiveArgumentIndexes;
 
   List<String> get safeArguments => List<String>.generate(
-        arguments.length,
-        (index) => sensitiveArgumentIndexes.contains(index)
-            ? '<redacted>'
-            : arguments[index],
-        growable: false,
-      );
+    arguments.length,
+    (index) => sensitiveArgumentIndexes.contains(index)
+        ? '<redacted>'
+        : arguments[index],
+    growable: false,
+  );
 }
 
 class AdbCommandResult {
@@ -141,8 +140,8 @@ class AdbCommandResult {
     final status = timedOut
         ? 'timed out'
         : spawnError != null
-            ? 'could not start'
-            : 'exit ${exitCode ?? 'unknown'}';
+        ? 'could not start'
+        : 'exit ${exitCode ?? 'unknown'}';
     final details = stderr.trim().isNotEmpty ? stderr.trim() : stdout.trim();
     return '$operation $status after ${duration.inMilliseconds} ms'
         '${details.isEmpty ? '' : ': $details'}';
@@ -164,9 +163,9 @@ abstract interface class AdbCommandRunner {
 
 class ProcessAdbCommandRunner implements AdbCommandRunner {
   ProcessAdbCommandRunner({Map<String, String>? parentEnvironment})
-      : _parentEnvironment = Map<String, String>.of(
-          parentEnvironment ?? Platform.environment,
-        );
+    : _parentEnvironment = Map<String, String>.of(
+        parentEnvironment ?? Platform.environment,
+      );
 
   static const _maximumOutputCharacters = 64 * 1024;
   final Map<String, String> _parentEnvironment;
@@ -178,8 +177,9 @@ class ProcessAdbCommandRunner implements AdbCommandRunner {
       const Utf8Decoder(allowMalformed: true),
     )) {
       if (remaining <= 0) continue;
-      final accepted =
-          text.length <= remaining ? text : text.substring(0, remaining);
+      final accepted = text.length <= remaining
+          ? text
+          : text.substring(0, remaining);
       output.write(accepted);
       remaining -= accepted.length;
     }
@@ -310,9 +310,9 @@ class AdbService implements AdbController {
     AdbCommandRunner? runner,
     String? adbPath,
     String? companionDirectoryPath,
-  })  : _runner = runner ?? ProcessAdbCommandRunner(),
-        _adbPath = adbPath ?? _defaultAdbPath(),
-        _companionDirectoryPath = companionDirectoryPath;
+  }) : _runner = runner ?? ProcessAdbCommandRunner(),
+       _adbPath = adbPath ?? _defaultAdbPath(),
+       _companionDirectoryPath = companionDirectoryPath;
 
   final AdbCommandRunner _runner;
   final String _adbPath;
@@ -542,8 +542,9 @@ class AdbService implements AdbController {
   }
 
   (String, String) _getIpPort(String deviceId) {
-    final match =
-        RegExp(r'(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})').firstMatch(deviceId);
+    final match = RegExp(
+      r'(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})',
+    ).firstMatch(deviceId);
     return match == null ? ('', '') : (match.group(1)!, match.group(2)!);
   }
 
@@ -567,7 +568,8 @@ class AdbService implements AdbController {
           timeout: const Duration(seconds: 6),
         ),
       );
-      final packageAbsent = (result.exitCode == 0 || result.exitCode == 1) &&
+      final packageAbsent =
+          (result.exitCode == 0 || result.exitCode == 1) &&
           result.stdout.trim().isEmpty &&
           result.stderr.trim().isEmpty;
       if (packageAbsent) continue;
@@ -625,7 +627,8 @@ class AdbService implements AdbController {
   }
 
   String? _bundledCompanionPath(CompanionInstallation installation) {
-    final directory = _companionDirectoryPath ??
+    final directory =
+        _companionDirectoryPath ??
         '${File(Platform.resolvedExecutable).parent.path}'
             '${Platform.pathSeparator}android';
     final candidate = File(
@@ -642,9 +645,7 @@ class AdbService implements AdbController {
         .toList(growable: false);
     if (packageLines.length != 1) return null;
     final path = packageLines.single.substring('package:'.length);
-    final safePath = RegExp(
-      r'^/[A-Za-z0-9._~+=@%/-]+/base\.apk$',
-    );
+    final safePath = RegExp(r'^/[A-Za-z0-9._~+=@%/-]+/base\.apk$');
     return safePath.hasMatch(path) ? path : null;
   }
 
@@ -658,13 +659,7 @@ class AdbService implements AdbController {
     final result = await _required(
       AdbCommandRequest(
         operation: 'verify installed Android companion APK',
-        arguments: [
-          '-s',
-          deviceId,
-          'shell',
-          'sha256sum',
-          installedApkPath,
-        ],
+        arguments: ['-s', deviceId, 'shell', 'sha256sum', installedApkPath],
         timeout: const Duration(seconds: 12),
       ),
     );
@@ -683,8 +678,8 @@ class AdbService implements AdbController {
         'Android did not return a valid companion APK SHA-256.',
       );
     }
-    final bundledHash =
-        (await sha256.bind(File(bundledPath).openRead()).first).toString();
+    final bundledHash = (await sha256.bind(File(bundledPath).openRead()).first)
+        .toString();
     return installedHash == bundledHash;
   }
 
@@ -839,7 +834,8 @@ class AdbService implements AdbController {
       ),
     );
     final cleanupError = result.stderr.toLowerCase();
-    final alreadyGone = cleanupError.contains('device not found') ||
+    final alreadyGone =
+        cleanupError.contains('device not found') ||
         (cleanupError.contains('listener') &&
             cleanupError.contains('not found'));
     if (!result.succeeded && !alreadyGone) {

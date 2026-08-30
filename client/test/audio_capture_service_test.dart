@@ -3,14 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('native Windows capture modes fail closed', () {
-    expect(
-      WindowsCaptureMode.fromNative(1),
-      WindowsCaptureMode.globalSystem,
-    );
-    expect(
-      WindowsCaptureMode.fromNative(2),
-      WindowsCaptureMode.multiEndpoint,
-    );
+    expect(WindowsCaptureMode.fromNative(1), WindowsCaptureMode.globalSystem);
+    expect(WindowsCaptureMode.fromNative(2), WindowsCaptureMode.multiEndpoint);
     expect(
       WindowsCaptureMode.fromNative(3),
       WindowsCaptureMode.defaultEndpoint,

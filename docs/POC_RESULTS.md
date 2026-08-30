@@ -37,10 +37,11 @@ The final clean-build run began from uninstall/install, kept the display off for
 60 seconds, and restored it afterward. Three additional cold-install 12-second
 runs also completed without drops. The app confirmed its actual route as the
 emulated built-in speaker, required the playback head to advance before READY,
-and exposed the session-scoped wake lock while streaming. A bounded 32-chunk
-(256 KiB maximum) queue absorbed the cold route/screen transition and the
-60-second run ended nearly empty. This is Android integration evidence, but an
-emulator cannot prove audible output or a physical USB cable.
+and exposed the session-scoped wake lock while streaming. The receiver now uses
+an 80 ms duration-based live edge (with a 32-chunk hard memory cap), so a route
+stall discards stale audio rather than accumulating permanent latency. This is
+Android integration evidence, but an emulator cannot prove audible output or a
+physical USB cable.
 
 The first smoke attempt also reproduced an ADB ordering race: the Windows TCP
 listener can accept before Android creates its abstract socket. Native transport
@@ -271,7 +272,11 @@ Implemented and locally checked without claiming hardware behavior:
   no-metadata-on-network enforcement, companion discovery, token redaction,
   dynamic forward parsing, and exact cleanup;
 - Windows Debug packaging includes the explicitly labeled debug POC APK and a
-  one-click install action; Profile/Release require a separately signed APK;
+  one-click install action; Profile/Release require a separately signed APK and
+  its pinned signer-certificate SHA-256;
+- the Release install graph copies project/third-party notices and operator
+  documentation, writes a complete SHA-256 file manifest, and is exercised by
+  an extracted-ZIP validator that rejects missing or altered files;
 - Windows manifest XML is valid and explicitly requests `asInvoker`.
 
 Flutter 3.47.2 / Dart 3.13.2 were staged outside the repositories. The following
@@ -290,16 +295,18 @@ forward parsing, exact cleanup, startup failure recovery, zero-click single-phon
 selection, authorization recovery, explicit companion installation, stale
 callback rejection, deliberate-disconnect suppression, bounded retry, companion
 version and exact-APK compatibility, immediate fatal-handshake reporting,
-awaited forward cleanup, and native capture readiness. A Windows Debug build was attempted, but
-Flutter correctly refused because the detected Visual Studio 2026 Insiders
-installation lacks the Desktop C++ workload components, CMake tools, and Windows
-10 SDK required by Flutter. No MSVC or Flutter Windows artifact is claimed.
+awaited forward cleanup, and native capture readiness. Hosted Windows CI now
+builds the Flutter Debug and Release configurations with MSVC, runs the native
+transport regressions, creates an ephemeral CI-only signed companion to exercise
+the release certificate gate, and validates an extracted portable ZIP. The
+local Visual Studio 2026 Insiders installation still lacks the Desktop C++
+workload, CMake tools, and Windows 10 SDK, so no local MSVC artifact is claimed.
 
 The Windows CMake project also configured and generated successfully with
 CMake 4.3.2/Ninja against a temporary MinGW toolchain. The native DLL and
 system-capture harness additionally compile/link with portable GCC 16.2. This
-validates the edited native code and CMake graph, but is not substituted for the
-required MSVC Flutter link/build.
+is supplementary native evidence; hosted MSVC CI is the authoritative Flutter
+Windows link/build check.
 
 ## Installed companion: hardware-independent slice
 
@@ -352,8 +359,8 @@ D32112C9082773CECED3ED46244F70D0FE658FC91BB7314E2468E4B3C6D282A0
 
 The final clean serialized Android regression reran `testDebugUnitTest`,
 `lintRelease`, `assembleDebug`, and `assembleRelease`: `BUILD SUCCESSFUL in
-1m 21s` with 86 tasks executed and two up-to-date. Flutter analysis and all 19
-tests also passed.
+1m 36s` with 86 tasks executed and two up-to-date, including three live-edge
+queue tests. Flutter analysis and all 19 host tests also passed.
 The project's Gradle 10 deprecation warning was removed by migrating the Android
 Groovy DSL to assignment syntax. Hosted CI is added to keep the wrapper, Android
 build, Flutter analysis/tests, and MSVC Windows build under continuous verification.

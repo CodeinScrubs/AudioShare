@@ -134,6 +134,22 @@ install(FILES "${ASSETS_DIR}/platform-tools-NOTICE.txt"
   RENAME "THIRD_PARTY_NOTICES_ADB.txt"
   COMPONENT Runtime)
 
+# Ship the material needed to understand, audit, and troubleshoot a portable
+# build without access to the source checkout.
+set(REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+install(FILES "${REPOSITORY_ROOT}/LICENSE"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  RENAME "LICENSE.txt"
+  COMPONENT Runtime)
+install(FILES "${REPOSITORY_ROOT}/README.md" "${REPOSITORY_ROOT}/SECURITY.md"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+install(FILES
+  "${REPOSITORY_ROOT}/docs/TROUBLESHOOTING.md"
+  "${REPOSITORY_ROOT}/docs/PROTOCOL.md"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/docs"
+  COMPONENT Runtime)
+
 # A release bundle must point this at a signed release APK. The checked-in
 # debug APK is installed only for local Debug POC builds and is never silently
 # promoted into Profile/Release distributions.
@@ -143,7 +159,21 @@ if(DEFINED ENV{AUDIOSHARE_COMPANION_APK} AND
     "Signed AudioShare Android companion APK for distribution" FORCE)
 else()
   set(AUDIOSHARE_COMPANION_APK "" CACHE FILEPATH
-    "Signed AudioShare Android companion APK for distribution")
+    "Signed AudioShare Android companion APK for distribution" FORCE)
+endif()
+if(DEFINED ENV{AUDIOSHARE_COMPANION_CERT_SHA256} AND
+    NOT "$ENV{AUDIOSHARE_COMPANION_CERT_SHA256}" STREQUAL "")
+  set(AUDIOSHARE_COMPANION_CERT_SHA256
+    "$ENV{AUDIOSHARE_COMPANION_CERT_SHA256}" CACHE STRING
+    "Pinned SHA-256 certificate digest for the release companion" FORCE)
+else()
+  set(AUDIOSHARE_COMPANION_CERT_SHA256 "" CACHE STRING
+    "Pinned SHA-256 certificate digest for the release companion" FORCE)
+endif()
+if((AUDIOSHARE_COMPANION_APK AND NOT AUDIOSHARE_COMPANION_CERT_SHA256) OR
+   (AUDIOSHARE_COMPANION_CERT_SHA256 AND NOT AUDIOSHARE_COMPANION_APK))
+  message(FATAL_ERROR
+    "AUDIOSHARE_COMPANION_APK and AUDIOSHARE_COMPANION_CERT_SHA256 must be supplied together")
 endif()
 if(AUDIOSHARE_COMPANION_APK)
   if(NOT EXISTS "${AUDIOSHARE_COMPANION_APK}")
@@ -155,6 +185,7 @@ if(AUDIOSHARE_COMPANION_APK)
       -Apk "${AUDIOSHARE_COMPANION_APK}"
       -ExpectedPackage "com.audioshare.usbcompanion"
       -MinimumVersionCode 2
+      -ExpectedCertificateSha256 "${AUDIOSHARE_COMPANION_CERT_SHA256}"
     RESULT_VARIABLE COMPANION_VERIFY_RESULT
     OUTPUT_VARIABLE COMPANION_VERIFY_OUTPUT
     ERROR_VARIABLE COMPANION_VERIFY_ERROR
@@ -174,7 +205,7 @@ else()
     if(\"\${CMAKE_INSTALL_CONFIG_NAME}\" STREQUAL \"Release\" OR
        \"\${CMAKE_INSTALL_CONFIG_NAME}\" STREQUAL \"Profile\")
       message(FATAL_ERROR
-        \"Release/Profile packaging requires AUDIOSHARE_COMPANION_APK to point to a signed APK\")
+        \"Release/Profile packaging requires a signed AUDIOSHARE_COMPANION_APK and its pinned AUDIOSHARE_COMPANION_CERT_SHA256\")
     endif()
   " COMPONENT Runtime)
 endif()
@@ -208,3 +239,26 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION "${INSTALL_BUNDLE_LIB_DIR}")
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT Runtime)
 include(InstallRequiredSystemLibraries)
+
+# Generate this last so every declared runtime file is covered. The manifest
+# intentionally excludes itself; the outer ZIP hash is printed by the release
+# packaging script and provides the checksum for the complete archive.
+install(CODE "
+  file(GLOB_RECURSE _audioshare_manifest_files LIST_DIRECTORIES false
+    \"\${CMAKE_INSTALL_PREFIX}/*\")
+  list(SORT _audioshare_manifest_files)
+  set(_audioshare_manifest \"# SHA-256  relative/path\\n\")
+  foreach(_audioshare_file IN LISTS _audioshare_manifest_files)
+    if(NOT _audioshare_file MATCHES \"/SHA256SUMS[.]txt$\")
+      file(SHA256 \"\${_audioshare_file}\" _audioshare_sha256)
+      file(RELATIVE_PATH _audioshare_relative
+        \"\${CMAKE_INSTALL_PREFIX}\" \"\${_audioshare_file}\")
+      string(REPLACE \"\\\\\" \"/\" _audioshare_relative
+        \"\${_audioshare_relative}\")
+      string(APPEND _audioshare_manifest
+        \"\${_audioshare_sha256}  \${_audioshare_relative}\\n\")
+    endif()
+  endforeach()
+  file(WRITE \"\${CMAKE_INSTALL_PREFIX}/SHA256SUMS.txt\"
+    \"\${_audioshare_manifest}\")
+" COMPONENT Runtime)

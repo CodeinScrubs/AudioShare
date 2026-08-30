@@ -65,11 +65,13 @@ PCM contains signed little-endian PCM16 samples despite the big-endian control
 header. Payloads must be nonempty, no larger than 8,192 bytes, and aligned to
 `channels * 2` bytes. Production tuning will normally use 5–20 ms chunks.
 
-The receiver queue is bounded to 32 PCM chunks (at most 256 KiB) and applies a
-live-edge policy: when full, it drops complete oldest chunks, increments
-dropped-frame statistics, and never grows without limit. The extra transient
-capacity absorbs cold speaker-route and screen-state pauses; it does not add
-steady-state latency while the queue remains empty.
+The receiver queue applies a duration-based live-edge policy: it retains the
+newest 80 ms of complete PCM chunks (or one indivisible input chunk), with a
+separate hard cap of 32 chunks. When the duration or chunk cap is reached, it
+drops complete oldest chunks, increments dropped-frame statistics, and never
+grows without limit. This deliberately bounds post-stall latency instead of
+allowing a long backlog to play out after the producer and AudioTrack return to
+the same real-time rate.
 
 ## Heartbeat and playback statistics
 
@@ -97,3 +99,8 @@ version code 2 or newer, requires the installed base APK SHA-256 to exactly
 match the APK bundled with that host build, and validates READY fields before
 starting capture. A fatal handshake ERROR is reported to the Dart supervisor
 immediately rather than waiting for the connection deadline.
+
+Before a distributable Windows package is created, the build also verifies the
+companion APK signature and requires its sole signer certificate SHA-256 to
+match the separately configured stable release identity. Runtime exact-file
+matching complements that build-time identity check; it does not replace it.

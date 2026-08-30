@@ -22,6 +22,12 @@ jobs:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+      - name: Set up Java for release-package fixture
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: 17
+
       - name: Set up Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -66,4 +72,54 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
             Pop-Location
+          }
+
+      - name: Install pinned Android tools for package verification
+        working-directory: .
+        run: |
+          & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" `
+            "platforms;android-36" "build-tools;36.1.0"
+
+      - name: Create ephemeral CI-only signed companion
+        working-directory: .
+        run: |
+          .\tools\new_ci_companion_fixture.ps1 `
+            -OutputDirectory (Join-Path $env:RUNNER_TEMP 'audioshare-ci-companion')
+
+      - name: Prove wrong companion signer is rejected
+        working-directory: .
+        run: |
+          $accepted = $false
+          try {
+            .\tools\verify_companion_apk.ps1 `
+              -Apk $env:AUDIOSHARE_COMPANION_APK `
+              -ExpectedPackage 'com.audioshare.usbcompanion' `
+              -MinimumVersionCode 2 `
+              -ExpectedCertificateSha256 ('0' * 64)
+            $accepted = $true
+          } catch {
+            if ($_.Exception.Message -notlike 'Wrong companion signing certificate*') {
+              throw
+            }
+          }
+          if ($accepted) { throw 'Wrong companion signer unexpectedly passed verification.' }
+
+      - name: Build and verify Windows Release package
+        run: |
+          flutter build windows --release
+          ..\tools\package_windows_release.ps1 `
+            -BundleDirectory .\build\windows\x64\runner\Release `
+            -OutputZip (Join-Path $env:RUNNER_TEMP 'AudioShare-Windows-CI-only.zip')
+
+      - name: Prove release APK inputs do not persist in CMake cache
+        run: |
+          Remove-Item Env:AUDIOSHARE_COMPANION_APK -ErrorAction SilentlyContinue
+          Remove-Item Env:AUDIOSHARE_COMPANION_CERT_SHA256 -ErrorAction SilentlyContinue
+          flutter build windows --debug
+          $cache = Get-Content .\build\windows\x64\CMakeCache.txt
+          if (-not ($cache -match '^AUDIOSHARE_COMPANION_APK:FILEPATH=$')) {
+            throw 'Companion APK path remained in CMake cache after its input was removed.'
+          }
+          if (-not ($cache -match '^AUDIOSHARE_COMPANION_CERT_SHA256:STRING=$')) {
+            throw 'Companion certificate remained in CMake cache after its input was removed.'
           }

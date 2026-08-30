@@ -85,6 +85,12 @@ Daily:
 - start system endpoint loopback and stream framed PCM; and
 - remove only this session's exact mapping during teardown.
 
+Release creation separately verifies the production APK's package/version,
+cryptographic signature, and pinned signer-certificate SHA-256. The portable
+bundle includes project and third-party license material, operator docs, and a
+complete file checksum manifest; the packaging script revalidates an extracted
+ZIP from a path containing spaces and proves altered or missing files fail.
+
 Every asynchronous connection attempt carries a monotonically increasing
 generation. A stale native READY callback cannot revive an unplugged or replaced
 session. Missing companion is a stable explicit-install state; other transient
@@ -110,7 +116,9 @@ initial POC uses:
 - an unexported `mediaPlayback` foreground service;
 - `LocalServerSocket` in Android's abstract namespace;
 - a randomized session token verified with constant-time comparison;
-- a bounded parser and 32-chunk (at most 256 KiB) transient playback queue;
+- a bounded parser and duration-based live-edge queue that retains only the
+  newest 80 ms (or one indivisible PCM chunk), with a separate 32-chunk hard
+  memory limit;
 - `AudioTrack` streaming PCM with low-latency mode, required built-in-speaker
   selection, and periodic verification of the actual route;
 - a session-scoped partial wake lock for screen-off playback; and

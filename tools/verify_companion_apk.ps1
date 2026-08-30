@@ -8,7 +8,10 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidateRange(1, [int]::MaxValue)]
-    [int] $MinimumVersionCode
+    [int] $MinimumVersionCode,
+
+    [Parameter(Mandatory = $true)]
+    [string] $ExpectedCertificateSha256
 )
 
 Set-StrictMode -Version Latest
@@ -34,6 +37,19 @@ function Invoke-CheckedAndroidTool {
         throw "$Description failed with exit code ${exitCode}: $details"
     }
     return @($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ })
+}
+
+function Get-Sha256Hex {
+    param([Parameter(Mandatory = $true)] [string] $Path)
+
+    $stream = [IO.File]::OpenRead($Path)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return -join ($algorithm.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') })
+    } finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
 }
 
 $resolvedApk = (Resolve-Path -LiteralPath $Apk).Path
@@ -80,8 +96,27 @@ if ($actualVersion -lt $MinimumVersionCode) {
     throw "Companion version code $actualVersion is below required $MinimumVersionCode."
 }
 
-$null = Invoke-CheckedAndroidTool -Tool $apkSigner `
+$normalizedExpectedCertificate = ($ExpectedCertificateSha256 -replace '[^0-9A-Fa-f]', '').ToLowerInvariant()
+if ($normalizedExpectedCertificate -notmatch '^[0-9a-f]{64}$') {
+    throw 'Expected certificate SHA-256 must contain exactly 64 hexadecimal digits.'
+}
+
+$signatureOutput = @(Invoke-CheckedAndroidTool -Tool $apkSigner `
     -Arguments @('verify', '--verbose', '--print-certs', $resolvedApk) `
-    -Description 'Verify companion APK signature'
-$sha256 = (Get-FileHash -LiteralPath $resolvedApk -Algorithm SHA256).Hash.ToLowerInvariant()
-Write-Output "Verified signed companion: package=$actualPackage versionCode=$actualVersion sha256=$sha256"
+    -Description 'Verify companion APK signature')
+$parsedCertificates = @(
+    foreach ($line in $signatureOutput) {
+        if ($line -match '(?i)certificate SHA-256 digest:\s*([0-9a-f][0-9a-f:\s-]*)$') {
+            ($Matches[1] -replace '[^0-9A-Fa-f]', '').ToLowerInvariant()
+        }
+    }
+)
+$actualCertificates = @($parsedCertificates | Where-Object { $_ } | Select-Object -Unique)
+if ($actualCertificates.Count -ne 1) {
+    throw "Expected exactly one APK signer certificate, found $($actualCertificates.Count)."
+}
+if ($actualCertificates[0] -cne $normalizedExpectedCertificate) {
+    throw "Wrong companion signing certificate. Expected '$normalizedExpectedCertificate', found '$($actualCertificates[0])'."
+}
+$sha256 = Get-Sha256Hex -Path $resolvedApk
+Write-Output "Verified signed companion: package=$actualPackage versionCode=$actualVersion certificateSha256=$normalizedExpectedCertificate sha256=$sha256"

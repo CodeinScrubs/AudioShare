@@ -20,11 +20,11 @@ extension AppLocalizationsFormatting on AppLocalizations {
       nativeErrorDetails(formatNumber(code));
 
   String nativeErrorDescription(int code) => switch (code) {
-        1000 => nativeError1000,
-        1200 => nativeError1200,
-        _ when code >= 2000 && code < 2100 => nativeErrorHost,
-        _ when code >= 2100 && code < 2200 => nativeErrorTransport,
-        _ when code >= 2200 && code < 2300 => nativeErrorWindowsCapture,
-        _ => nativeErrorUnknown,
-      };
+    1000 => nativeError1000,
+    1200 => nativeError1200,
+    _ when code >= 2000 && code < 2100 => nativeErrorHost,
+    _ when code >= 2100 && code < 2200 => nativeErrorTransport,
+    _ when code >= 2200 && code < 2300 => nativeErrorWindowsCapture,
+    _ => nativeErrorUnknown,
+  };
 }

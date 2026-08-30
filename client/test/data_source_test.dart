@@ -79,9 +79,7 @@ class FakeAdbController implements AdbController {
   String? bundledCompanionApkPath() => 'fake-companion.apk';
 
   @override
-  Future<CompanionInstallation> installBundledCompanion(
-    String deviceId,
-  ) async {
+  Future<CompanionInstallation> installBundledCompanion(String deviceId) async {
     installCalls++;
     companion = CompanionInstallation.release;
     return companion!;
@@ -232,9 +230,7 @@ class FakeAudioCaptureController implements AudioCaptureController {
   }
 }
 
-DeviceModel usbPhone({
-  AdbDeviceState state = AdbDeviceState.authorized,
-}) =>
+DeviceModel usbPhone({AdbDeviceState state = AdbDeviceState.authorized}) =>
     DeviceModel(
       deviceId: 'USB123',
       usb: true,
@@ -298,23 +294,25 @@ void main() {
     );
   }
 
-  test('one authorized USB phone reaches streaming without a Connect click',
-      () async {
-    adb.snapshot = [usbPhone()];
-    final dataSource = createSource();
+  test(
+    'one authorized USB phone reaches streaming without a Connect click',
+    () async {
+      adb.snapshot = [usbPhone()];
+      final dataSource = createSource();
 
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.streaming,
+      );
 
-    expect(dataSource.getConnectState('USB123'), 2);
-    expect(preferences.lastDeviceId, 'USB123');
-    expect(adb.findCompanionCalls, 1);
-    expect(adb.createForwardCalls, 1);
-    expect(adb.launchCalls, 1);
-    expect(audio.initializeCalls, 1);
-    expect(audio.startCalls, 1);
-  });
+      expect(dataSource.getConnectState('USB123'), 2);
+      expect(preferences.lastDeviceId, 'USB123');
+      expect(adb.findCompanionCalls, 1);
+      expect(adb.createForwardCalls, 1);
+      expect(adb.launchCalls, 1);
+      expect(audio.initializeCalls, 1);
+      expect(audio.startCalls, 1);
+    },
+  );
 
   test('startup package failure is actionable and retryable', () async {
     adb
@@ -333,187 +331,194 @@ void main() {
 
     adb.validationError = null;
     dataSource.retryStartup();
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
+    await waitUntil(() => dataSource.overallPhase == ConnectionPhase.streaming);
     expect(adb.deviceCalls, 1);
   });
 
-  test('unauthorized phone automatically continues after the user approves it',
-      () async {
-    adb.snapshot = [usbPhone(state: AdbDeviceState.unauthorized)];
-    final dataSource = createSource();
+  test(
+    'unauthorized phone automatically continues after the user approves it',
+    () async {
+      adb.snapshot = [usbPhone(state: AdbDeviceState.unauthorized)];
+      final dataSource = createSource();
 
-    await waitUntil(
-      () =>
-          dataSource.getConnectionPhase('USB123') ==
-          ConnectionPhase.phoneUnauthorized,
-    );
-    expect(adb.findCompanionCalls, 0);
+      await waitUntil(
+        () =>
+            dataSource.getConnectionPhase('USB123') ==
+            ConnectionPhase.phoneUnauthorized,
+      );
+      expect(adb.findCompanionCalls, 0);
 
-    adb.publish([usbPhone()]);
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
+      adb.publish([usbPhone()]);
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.streaming,
+      );
 
-    expect(adb.findCompanionCalls, 1);
-    expect(audio.startCalls, 1);
-  });
+      expect(adb.findCompanionCalls, 1);
+      expect(audio.startCalls, 1);
+    },
+  );
 
-  test('missing companion becomes an explicit install state without retry spam',
-      () async {
-    adb
-      ..snapshot = [usbPhone()]
-      ..companion = null;
-    final dataSource = createSource();
+  test(
+    'missing companion becomes an explicit install state without retry spam',
+    () async {
+      adb
+        ..snapshot = [usbPhone()]
+        ..companion = null;
+      final dataSource = createSource();
 
-    await waitUntil(
-      () => dataSource.isCompanionMissing('USB123'),
-    );
+      await waitUntil(() => dataSource.isCompanionMissing('USB123'));
 
-    expect(
-      dataSource.getConnectionPhase('USB123'),
-      ConnectionPhase.companionMissing,
-    );
-    expect(dataSource.takePendingError(), isNull);
-    expect(audio.initializeCalls, 0);
-    expect(adb.findCompanionCalls, 1);
+      expect(
+        dataSource.getConnectionPhase('USB123'),
+        ConnectionPhase.companionMissing,
+      );
+      expect(dataSource.takePendingError(), isNull);
+      expect(audio.initializeCalls, 0);
+      expect(adb.findCompanionCalls, 1);
 
-    await dataSource.installCompanion('USB123');
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
+      await dataSource.installCompanion('USB123');
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.streaming,
+      );
 
-    expect(adb.installCalls, 1);
-    expect(adb.findCompanionCalls, 2);
-    expect(audio.startCalls, 1);
-  });
+      expect(adb.installCalls, 1);
+      expect(adb.findCompanionCalls, 2);
+      expect(audio.startCalls, 1);
+    },
+  );
 
-  test('a stale native READY callback cannot revive an unplugged session',
-      () async {
-    adb.snapshot = [usbPhone()];
-    audio.autoReady = false;
-    final dataSource = createSource();
+  test(
+    'a stale native READY callback cannot revive an unplugged session',
+    () async {
+      adb.snapshot = [usbPhone()];
+      audio.autoReady = false;
+      final dataSource = createSource();
 
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.handshaking,
-    );
-    final staleReady = audio.connectCallback!;
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.handshaking,
+      );
+      final staleReady = audio.connectCallback!;
 
-    adb.publish([]);
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.waitingForPhone,
-    );
-    staleReady('ready');
-    await Future<void>.delayed(const Duration(milliseconds: 10));
+      adb.publish([]);
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.waitingForPhone,
+      );
+      staleReady('ready');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
 
-    expect(audio.startCalls, 0);
-    expect(dataSource.getConnectState('USB123'), 0);
-    expect(dataSource.overallPhase, ConnectionPhase.waitingForPhone);
-  });
+      expect(audio.startCalls, 0);
+      expect(dataSource.getConnectState('USB123'), 0);
+      expect(dataSource.overallPhase, ConnectionPhase.waitingForPhone);
+    },
+  );
 
-  test('fatal native handshake errors are surfaced without waiting for timeout',
-      () async {
-    adb.snapshot = [usbPhone()];
-    audio.autoReady = false;
-    final dataSource = createSource(
-      reconnectDelay: const Duration(hours: 1),
-    );
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.handshaking,
-    );
+  test(
+    'fatal native handshake errors are surfaced without waiting for timeout',
+    () async {
+      adb.snapshot = [usbPhone()];
+      audio.autoReady = false;
+      final dataSource = createSource(reconnectDelay: const Duration(hours: 1));
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.handshaking,
+      );
 
-    audio.nextError = const AudioCaptureError(
-      2107,
-      'Android handshake error: built-in speaker unavailable',
-    );
-    audio.connectCallback!('error');
-    await waitUntil(
-      () =>
-          dataSource.lastError?.type == UiErrorType.transportHandshakeFailed &&
-          dataSource.overallPhase == ConnectionPhase.reconnecting,
-    );
+      audio.nextError = const AudioCaptureError(
+        2107,
+        'Android handshake error: built-in speaker unavailable',
+      );
+      audio.connectCallback!('error');
+      await waitUntil(
+        () =>
+            dataSource.lastError?.type ==
+                UiErrorType.transportHandshakeFailed &&
+            dataSource.overallPhase == ConnectionPhase.reconnecting,
+      );
 
-    expect(dataSource.lastError?.nativeError?.code, 2107);
-    expect(
-      dataSource.lastError?.nativeError?.message,
-      contains('built-in speaker unavailable'),
-    );
-    expect(dataSource.getConnectState('USB123'), 0);
-  });
+      expect(dataSource.lastError?.nativeError?.code, 2107);
+      expect(
+        dataSource.lastError?.nativeError?.message,
+        contains('built-in speaker unavailable'),
+      );
+      expect(dataSource.getConnectState('USB123'), 0);
+    },
+  );
 
-  test('manual disconnect stays disconnected until manual connect or replug',
-      () async {
-    adb.snapshot = [usbPhone()];
-    final dataSource = createSource();
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
+  test(
+    'manual disconnect stays disconnected until manual connect or replug',
+    () async {
+      adb.snapshot = [usbPhone()];
+      final dataSource = createSource();
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.streaming,
+      );
 
-    dataSource.disconnectDevice('USB123');
-    await waitUntil(() => dataSource.getConnectState('USB123') == 0);
-    adb.publish([usbPhone()]);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(adb.launchCalls, 1);
+      dataSource.disconnectDevice('USB123');
+      await waitUntil(() => dataSource.getConnectState('USB123') == 0);
+      adb.publish([usbPhone()]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(adb.launchCalls, 1);
 
-    adb.publish([]);
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.waitingForPhone,
-    );
-    adb.publish([usbPhone()]);
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
-    expect(adb.launchCalls, 2);
-  });
+      adb.publish([]);
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.waitingForPhone,
+      );
+      adb.publish([usbPhone()]);
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.streaming,
+      );
+      expect(adb.launchCalls, 2);
+    },
+  );
 
-  test('transient companion launch failure reconnects with bounded backoff',
-      () async {
-    adb
-      ..snapshot = [usbPhone()]
-      ..launchFailuresRemaining = 1;
-    final dataSource = createSource();
+  test(
+    'transient companion launch failure reconnects with bounded backoff',
+    () async {
+      adb
+        ..snapshot = [usbPhone()]
+        ..launchFailuresRemaining = 1;
+      final dataSource = createSource();
 
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.streaming,
+      );
 
-    expect(adb.launchCalls, 2);
-    expect(adb.createForwardCalls, 2);
-    expect(adb.removeForwardCalls, greaterThanOrEqualTo(1));
-    expect(dataSource.lastError?.type, UiErrorType.companionLaunchFailed);
-  });
+      expect(adb.launchCalls, 2);
+      expect(adb.createForwardCalls, 2);
+      expect(adb.removeForwardCalls, greaterThanOrEqualTo(1));
+      expect(dataSource.lastError?.type, UiErrorType.companionLaunchFailed);
+    },
+  );
 
-  test('capture is not reported streaming until native mode is active',
-      () async {
-    adb.snapshot = [usbPhone()];
-    audio.modeAfterStart = WindowsCaptureMode.inactive;
-    final dataSource = createSource(
-      // Leave enough scheduling headroom for a loaded Windows CI runner while
-      // still exercising the bounded readiness timeout.
-      captureStartupTimeout: const Duration(milliseconds: 100),
-      reconnectDelay: const Duration(hours: 1),
-    );
+  test(
+    'capture is not reported streaming until native mode is active',
+    () async {
+      adb.snapshot = [usbPhone()];
+      audio.modeAfterStart = WindowsCaptureMode.inactive;
+      final dataSource = createSource(
+        // Leave enough scheduling headroom for a loaded Windows CI runner while
+        // still exercising the bounded readiness timeout.
+        captureStartupTimeout: const Duration(milliseconds: 100),
+        reconnectDelay: const Duration(hours: 1),
+      );
 
-    await waitUntil(
-      () =>
-          dataSource.lastError?.type == UiErrorType.captureStartFailed &&
-          dataSource.overallPhase == ConnectionPhase.reconnecting &&
-          dataSource.getConnectState('USB123') == 0,
-    );
+      await waitUntil(
+        () =>
+            dataSource.lastError?.type == UiErrorType.captureStartFailed &&
+            dataSource.overallPhase == ConnectionPhase.reconnecting &&
+            dataSource.getConnectState('USB123') == 0,
+      );
 
-    expect(dataSource.getConnectState('USB123'), 0);
-    expect(dataSource.overallPhase, ConnectionPhase.reconnecting);
-    expect(audio.startCalls, 1);
-  });
+      expect(dataSource.getConnectState('USB123'), 0);
+      expect(dataSource.overallPhase, ConnectionPhase.reconnecting);
+      expect(audio.startCalls, 1);
+    },
+  );
 
   test('normal shutdown awaits exact ADB forward cleanup', () async {
     adb.snapshot = [usbPhone()];
     adb.removeForwardGate = Completer<void>();
     final dataSource = createSource();
-    await waitUntil(
-      () => dataSource.overallPhase == ConnectionPhase.streaming,
-    );
+    await waitUntil(() => dataSource.overallPhase == ConnectionPhase.streaming);
 
     final shutdown = dataSource.shutdown();
     await Future<void>.delayed(Duration.zero);
