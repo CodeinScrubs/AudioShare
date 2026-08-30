@@ -318,10 +318,10 @@ bounded frame parser, bounded AudioTrack queue, watchdog, and minimal UI.
 Executed locally:
 
 ```text
-testDebugUnitTest + lintRelease + assembleRelease
-BUILD SUCCESSFUL in 1m 12s
+clean testDebugUnitTest + lintRelease + assembleDebug + assembleRelease
+BUILD SUCCESSFUL in 1m 20s
 88 actionable tasks: 86 executed, 2 up-to-date
-11 unit tests passed (2 session-config + 9 protocol)
+14 unit tests passed (2 session-config + 9 protocol + 3 live-edge queue)
 Android release lint: No Issues Found / no errors or warnings
 debug APK: app/build/outputs/apk/debug/app-debug.apk
 unsigned POC release APK: app/build/outputs/apk/release/app-release-unsigned.apk
@@ -346,7 +346,7 @@ audible output remain physical-device checks.
 The locally rebuilt unsigned POC release APK SHA-256 at this checkpoint is:
 
 ```text
-BB138948ECD47D2F2F88FA1CE0632261DEB231E3539F6A7DD566A6D02736BB61
+30F86B4FEA286DF3488AA10C6650C7987C928DE9EBE77BAF5435A3198939276E
 ```
 
 It is not a distributable artifact. Production signing requires a stable
@@ -362,8 +362,9 @@ heartbeat-failure fixes. Its SHA-256 is:
 
 The final clean serialized Android regression reran `testDebugUnitTest`,
 `lintRelease`, `assembleDebug`, and `assembleRelease`: `BUILD SUCCESSFUL in
-3m 14s` with 88 tasks executed under the Gradle 9.7.1 wrapper, including three
-live-edge queue tests. Flutter analysis and all 20 host tests also passed.
+1m 20s` with 88 tasks executed under the Gradle 9.7.1 wrapper, including 14
+unit tests (three live-edge queue tests). Flutter analysis and all 20 host tests
+also passed.
 The project's Gradle 10 deprecation warning was removed by migrating the Android
 Groovy DSL to assignment syntax. Hosted CI is added to keep the wrapper, Android
 build, Flutter analysis/tests, and MSVC Windows build under continuous verification.
