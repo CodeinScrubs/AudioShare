@@ -1,6 +1,6 @@
 # AudioShare USB Wire Protocol
 
-Status: version 1 POC. This file is the authoritative cross-product protocol
+Status: version 1 release candidate. This file is the authoritative cross-product protocol
 specification. Implementations must reject, not guess at, unsupported data.
 
 ## Transport and byte order
@@ -65,9 +65,11 @@ PCM contains signed little-endian PCM16 samples despite the big-endian control
 header. Payloads must be nonempty, no larger than 8,192 bytes, and aligned to
 `channels * 2` bytes. Production tuning will normally use 5–20 ms chunks.
 
-The receiver queue is bounded and applies a live-edge policy: when full, it
-drops complete oldest PCM chunks, increments dropped-frame statistics, and
-never accumulates seconds of obsolete audio.
+The receiver queue is bounded to 32 PCM chunks (at most 256 KiB) and applies a
+live-edge policy: when full, it drops complete oldest chunks, increments
+dropped-frame statistics, and never grows without limit. The extra transient
+capacity absorbs cold speaker-route and screen-state pauses; it does not add
+steady-state latency while the queue remains empty.
 
 ## Heartbeat and playback statistics
 
@@ -86,9 +88,12 @@ validates the exact length before decoding and exposes these counters through
 the FFI diagnostics API. PING/PONG remains supported for protocol tests and
 future peers.
 
-## Current POC gaps
+## Current gaps
 
-ERROR payload schema, capability negotiation, monotonic sequence rollover,
-timestamp semantics, and focus/flush messages remain provisional. They must be
-finalized with mirrored Windows and Android golden-vector tests before protocol
-version 1 is declared stable.
+ERROR payloads are bounded UTF-8 diagnostic text. Capability negotiation,
+monotonic sequence rollover, timestamp semantics, and focus/flush messages
+remain future-version work. The Windows host requires companion application
+version code 2 or newer, requires the installed base APK SHA-256 to exactly
+match the APK bundled with that host build, and validates READY fields before
+starting capture. A fatal handshake ERROR is reported to the Dart supervisor
+immediately rather than waiting for the connection deadline.

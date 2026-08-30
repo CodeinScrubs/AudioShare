@@ -145,6 +145,8 @@ class DataSource extends ChangeNotifier {
   bool _runtimeReady = false;
   bool _trackerStarted = false;
   bool _disposed = false;
+  bool _notifierDisposed = false;
+  Future<void>? _shutdownFuture;
   int _sessionGeneration = 0;
   int _reconnectAttempt = 0;
   String? _connectingDeviceId;
@@ -671,13 +673,17 @@ class DataSource extends ChangeNotifier {
   void _onNativeConnected(int generation, String deviceId, String status) {
     if (_disposed || generation != _sessionGeneration) return;
     if (status != 'ready') {
+      final nativeError = _audioCapture.pollLastError();
       unawaited(
         _failConnection(
           generation,
           UiError(
             type: UiErrorType.transportHandshakeFailed,
             phase: ConnectionPhase.handshaking,
-            exception: 'Android companion rejected the session: $status',
+            nativeError: nativeError,
+            exception: nativeError == null
+                ? 'Android companion rejected the session: $status'
+                : null,
           ),
           retryAutomatically: true,
         ),
@@ -946,24 +952,51 @@ class DataSource extends ChangeNotifier {
     }
   }
 
-  @override
-  void dispose() {
-    if (_disposed) return;
+  Future<void> shutdown() {
+    final existing = _shutdownFuture;
+    if (existing != null) return existing;
     _disposed = true;
     _pollTimer?.cancel();
     _healthTimer?.cancel();
     _reconnectTimer?.cancel();
     _connectionDeadline?.cancel();
-    unawaited(_deviceTrackerSubscription?.cancel());
+    final trackerCancellation = _deviceTrackerSubscription?.cancel();
+    _deviceTrackerSubscription = null;
     _sessionGeneration++;
     _audioCapture.stop();
     final forward = _forwardSession;
     _forwardSession = null;
-    final cleanup = forward == null
-        ? Future<void>.value()
-        : _adb.removeForward(forward).catchError((Object _) {});
-    unawaited(cleanup.whenComplete(_adb.dispose));
+    final shutdown = _completeShutdown(trackerCancellation, forward);
+    _shutdownFuture = shutdown;
+    return shutdown;
+  }
+
+  Future<void> _completeShutdown(
+    Future<void>? trackerCancellation,
+    AdbForwardSession? forward,
+  ) async {
+    try {
+      await trackerCancellation?.timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // ADB disposal below forcibly stops a tracker that did not cancel.
+    }
+    if (forward != null) {
+      try {
+        await _adb.removeForward(forward);
+      } catch (_) {
+        // Process teardown cannot present a useful dialog. Normal session
+        // cleanup still reports this failure while the UI is alive.
+      }
+    }
+    _adb.dispose();
     _audioCapture.dispose();
+  }
+
+  @override
+  void dispose() {
+    unawaited(shutdown());
+    if (_notifierDisposed) return;
+    _notifierDisposed = true;
     super.dispose();
   }
 }

@@ -4,13 +4,15 @@ Stream **all Windows system audio** to an Android phone speaker over a USB ADB
 connection. This fork is being specialized for a portable, standard-user,
 firewall-independent Windows workflow.
 
-Development status: the Android companion builds and its unit/lint checks pass;
-the Windows capture hierarchy compiles and passed local native integration
-test with non-zero PCM. The Windows USB connection supervisor is unit-tested for
-zero-click selection, authorization recovery, exact generation ownership, and
-bounded reconnect. Physical USB, phone playback, firewall-prompt, latency, and
-long-run tests are still required before this fork is release-ready. See [POC
-results](docs/POC_RESULTS.md).
+Development status: the Android companion passes clean unit, lint, debug, and
+release builds. A real Android 16 emulator passed a cold-install, authenticated
+ADB-forwarded 60-second screen-off stream with 2,880,000 exact PCM frames,
+enforced speaker route, zero drops, wake-lock continuity, and exact cleanup. The
+Windows capture hierarchy passes strict
+native integration in global, multi-endpoint, and default-output modes with
+non-zero PCM. Flutter analysis and 19 supervisor/lifecycle/security tests pass. A physical
+Samsung audible-output/USB-cable run, restricted-PC firewall check, measured
+latency, and long-run test remain the final hardware gates. See [POC results](docs/POC_RESULTS.md).
 
 ## Architecture
 
@@ -39,8 +41,9 @@ fails, it enumerates usable active render endpoints, captures each with event-dr
 WASAPI loopback, and mixes them on a bounded 10 ms clock. If no endpoint can be
 opened, it falls back to the current default output. The UI identifies the active
 mode and endpoint count. The multi-endpoint path has independent device clocks,
-so it favors bounded live-edge latency and reports drops/underruns; long-run drift
-and duplicate mirrored-output suppression still require target-hardware evidence.
+so it favors bounded live-edge latency and reports drops/underruns; its strict
+local stress run had zero host/ring drops, while long-run drift and duplicate
+mirrored-output suppression still require target-hardware evidence.
 
 ## First time only
 
@@ -52,8 +55,9 @@ and duplicate mirrored-output suppression still require target-hardware evidence
    selected automatically; with multiple phones, choose the intended one.
 6. If shown, choose **Install companion**. This is an explicit one-time ADB
    APK installation; AudioShare never silently installs an app in the background.
-7. After installation, the host launches the companion, creates the USB-local
-   transport, authenticates it, and starts capture automatically.
+7. After installation, the host verifies that the installed base APK exactly
+   matches the bundled artifact, launches it, creates the USB-local transport,
+   authenticates it, and starts capture automatically.
 8. Confirm that system audio plays through the phone and leave automatic
    connection enabled.
 
@@ -62,13 +66,14 @@ driver can require administrator access and is outside AudioShare's control.
 
 ## Daily use target
 
-1. Start or log in to Windows with AudioShare running.
+1. Start AudioShare after logging in to Windows.
 2. Plug in the remembered, authorized phone by USB.
 3. Play sound from any Windows application, including Infinit/idplayer.
 
-The intended final workflow requires no Android UI, IP address, Wi-Fi, Internet,
-firewall approval, or Connect click. That zero-click supervisor behavior is unit
-tested but not yet USB/phone hardware-verified. A deliberate **Disconnect** stays
+Once the Windows host is open, the intended workflow requires no Android UI, IP
+address, Wi-Fi, Internet, firewall approval, or Connect click. Automatic Windows
+startup and tray UI are not implemented yet. The zero-click USB supervisor is
+unit tested but not yet verified on the target phone. A deliberate **Disconnect** stays
 disconnected while the current cable session remains; unplug/replug restores the
 normal automatic path.
 
@@ -85,8 +90,10 @@ flutter test
 flutter build windows --debug
 ```
 
-Debug builds bundle the clearly labeled POC debug companion APK. A distributable
-release must use a stable signing key and provide the signed APK explicitly:
+Debug builds bundle the clearly labeled version-code 2 debug companion APK. A
+distributable release must use a stable signing key and provide the signed APK
+explicitly. Configuration fails unless Android SDK `apkanalyzer` and `apksigner`
+confirm its signature, package ID, and compatible version:
 
 ```powershell
 $env:AUDIOSHARE_COMPANION_APK = 'C:\absolute\path\audioshare-companion.apk'
@@ -98,8 +105,13 @@ The sibling `client android app` Git repository owns the native companion:
 ```powershell
 cd '..\client android app'
 $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
-.\gradlew.bat testDebugUnitTest lintRelease assembleRelease --no-daemon
+.\gradlew.bat testDebugUnitTest lintRelease assembleRelease `
+  --no-daemon --max-workers=1
 ```
+
+The upstream `com.ysbing.audioshare` Android server, its public default signing
+key, and its stale APK are retired from this branch. They are not compatible
+with or trusted by the USB companion. See [security policy](SECURITY.md).
 
 Additional native protocol check:
 
@@ -118,6 +130,10 @@ g++ -std=c++17 -Wall -Wextra -Werror `
   client/native/system_capture_integration_test.cpp `
   -o system_capture_integration_test.exe -lws2_32
 .\system_capture_integration_test.exe --require-signal --expect-global
+.\system_capture_integration_test.exe --expect-handshake-retry
+.\system_capture_integration_test.exe --expect-handshake-stop
+.\system_capture_integration_test.exe --expect-handshake-error
+.\system_capture_integration_test.exe --expect-disconnect-error
 # Compatibility branch checks (test-only compile flags):
 # -DAUDIOSHARE_FORCE_MULTI_ENDPOINT  -> --expect-multi
 # -DAUDIOSHARE_FORCE_DEFAULT_ENDPOINT -> --expect-default

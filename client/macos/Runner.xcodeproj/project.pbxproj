@@ -367,7 +367,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nASSETS=\"$SRCROOT/../assets\"\nDST_MACOS=\"$BUILT_PRODUCTS_DIR/$EXECUTABLE_FOLDER_PATH\"\nDST_RESOURCES=\"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources\"\nmkdir -p \"$DST_RESOURCES\"\n# adb is a macOS binary; sign it with the same identity as the app.\nif [ -f \"$ASSETS/adb\" ]; then\n  cp -f \"$ASSETS/adb\" \"$DST_MACOS/adb\"\n  chmod +x \"$DST_MACOS/adb\"\n  IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}\"\n  if [ \"$IDENTITY\" = \"-\" ]; then\n    /usr/bin/codesign --force --options runtime --sign \"$IDENTITY\" --timestamp=none \"$DST_MACOS/adb\"\n  else\n    /usr/bin/codesign --force --options runtime --sign \"$IDENTITY\" \"$DST_MACOS/adb\"\n  fi\nfi\n# server is an Android APK (non-Mach-O); keep it in Resources.\nif [ -f \"$ASSETS/server\" ]; then\n  cp -f \"$ASSETS/server\" \"$DST_RESOURCES/server\"\nfi\n";
+			shellScript = "set -e\nASSETS=\"$SRCROOT/../assets\"\nDST_MACOS=\"$BUILT_PRODUCTS_DIR/$EXECUTABLE_FOLDER_PATH\"\n# adb is a macOS binary; sign it with the same identity as the app.\nif [ -f \"$ASSETS/adb\" ]; then\n  cp -f \"$ASSETS/adb\" \"$DST_MACOS/adb\"\n  chmod +x \"$DST_MACOS/adb\"\n  IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}\"\n  if [ \"$IDENTITY\" = \"-\" ]; then\n    /usr/bin/codesign --force --options runtime --sign \"$IDENTITY\" --timestamp=none \"$DST_MACOS/adb\"\n  else\n    /usr/bin/codesign --force --options runtime --sign \"$IDENTITY\" \"$DST_MACOS/adb\"\n  fi\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

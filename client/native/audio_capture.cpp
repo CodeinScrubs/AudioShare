@@ -72,6 +72,13 @@ constexpr size_t kMaxEndpointQueueFrames = kSampleRate / 10;
 constexpr size_t kEndpointBufferSamples =
     kMaxEndpointQueueFrames * kChannels;
 constexpr size_t kMaxMultiEndpointCount = MAXIMUM_WAIT_OBJECTS - 3;
+#if defined(CREATE_WAITABLE_TIMER_HIGH_RESOLUTION)
+constexpr DWORD kHighResolutionTimerFlag =
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION;
+#else
+// Public synchapi.h value, supported by Windows 10 version 1803 and newer.
+constexpr DWORD kHighResolutionTimerFlag = 0x00000002;
+#endif
 
 enum class CaptureMode : uint32_t {
     kNone = 0,
@@ -87,6 +94,7 @@ std::atomic<bool> g_initialized{false};
 std::atomic<bool> g_transportRunning{false};
 std::atomic<bool> g_captureRunning{false};
 std::atomic<bool> g_connected{false};
+std::atomic<bool> g_callbackAllowed{false};
 std::atomic<uint64_t> g_droppedChunks{0};
 std::atomic<uint64_t> g_androidReceivedFrames{0};
 std::atomic<uint64_t> g_androidDroppedFrames{0};
@@ -203,6 +211,19 @@ bool ReceiveFrame(SOCKET socket, ReceivedFrame* frame) {
     frame->payload.resize(decoded.payloadLength);
     return decoded.payloadLength == 0 ||
         ReceiveAll(socket, frame->payload.data(), decoded.payloadLength);
+}
+
+std::string SanitizeAndroidError(const std::vector<uint8_t>& payload) {
+    std::string detail;
+    const size_t detailLength = payload.size() < 512 ? payload.size() : 512;
+    detail.reserve(detailLength);
+    for (size_t index = 0; index < detailLength; ++index) {
+        const uint8_t value = payload[index];
+        detail.push_back(value == 0 || value < 0x20
+            ? ' '
+            : static_cast<char>(value));
+    }
+    return detail;
 }
 
 void CloseTransportSocket() {
@@ -480,11 +501,7 @@ HRESULT InitializeEndpoint(IMMDevice* device, const WAVEFORMATEX* format,
             __uuidof(IAudioCaptureClient),
             reinterpret_cast<void**>(&endpoint->captureClient));
     }
-    if (SUCCEEDED(result)) result = endpoint->audioClient->Start();
-    if (SUCCEEDED(result)) {
-        endpoint->audioStarted = true;
-        return S_OK;
-    }
+    if (SUCCEEDED(result)) return S_OK;
 
     CloseEndpoint(endpoint);
     return result;
@@ -532,6 +549,22 @@ HRESULT EnumerateActiveEndpoints(IMMDeviceEnumerator* enumerator,
         if (device != nullptr) device->Release();
     }
     collection->Release();
+
+    // Do not start an endpoint while the collection is still being built.
+    // Enumeration/activation can take longer than the low-latency ring, and a
+    // running early endpoint would accumulate audio before the mixer can drain
+    // it. Start the fully initialized set together immediately before return.
+    for (auto endpoint = endpoints->begin(); endpoint != endpoints->end();) {
+        const HRESULT startResult = endpoint->audioClient->Start();
+        if (SUCCEEDED(startResult)) {
+            endpoint->audioStarted = true;
+            ++endpoint;
+        } else {
+            lastEndpointResult = startResult;
+            CloseEndpoint(&*endpoint);
+            endpoint = endpoints->erase(endpoint);
+        }
+    }
 
     if (endpoints->empty()) return lastEndpointResult;
     g_activeEndpointCount.store(static_cast<uint32_t>(endpoints->size()));
@@ -723,6 +756,16 @@ void MixEndpointPeriod(std::vector<EndpointCapture>* endpoints) {
         mixed.size() * sizeof(mixed[0]));
 }
 
+size_t MaximumQueuedEndpointFrames(
+    const std::vector<EndpointCapture>& endpoints) {
+    size_t maximum = 0;
+    for (const auto& endpoint : endpoints) {
+        const size_t frames = endpoint.sampleCount / kChannels;
+        if (frames > maximum) maximum = frames;
+    }
+    return maximum;
+}
+
 void DrainAllEndpoints(std::vector<EndpointCapture>* endpoints,
                        HANDLE changeEvent) {
     for (auto& endpoint : *endpoints) {
@@ -751,7 +794,14 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
     if (FAILED(result)) return result;
 
     changeEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    mixerTimer = CreateWaitableTimer(nullptr, FALSE, nullptr);
+    // A default-resolution 10 ms periodic timer can be rounded to the legacy
+    // 15.6 ms scheduler tick. Input then arrives faster than the mixer drains
+    // it, eventually overflowing the bounded ring. The process targets modern
+    // Windows, where this per-timer high-resolution flag is available; failure
+    // cleanly abandons this mode and lets the caller try default-endpoint
+    // loopback instead of knowingly streaming damaged audio.
+    mixerTimer = CreateWaitableTimerExW(
+        nullptr, nullptr, kHighResolutionTimerFlag, TIMER_ALL_ACCESS);
     if (changeEvent == nullptr || mixerTimer == nullptr) {
         result = HRESULT_FROM_WIN32(GetLastError());
     }
@@ -762,6 +812,10 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
     if (SUCCEEDED(result)) {
         result = enumerator->RegisterEndpointNotificationCallback(notification);
         notificationRegistered = SUCCEEDED(result);
+    }
+    if (SUCCEEDED(result)) {
+        result = EnumerateActiveEndpointsWithRetry(
+            enumerator, format, &endpoints);
     }
     if (SUCCEEDED(result)) {
         LARGE_INTEGER firstTick{};
@@ -775,10 +829,6 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
         }
     }
     if (SUCCEEDED(result)) {
-        result = EnumerateActiveEndpointsWithRetry(
-            enumerator, format, &endpoints);
-    }
-    if (SUCCEEDED(result)) {
         g_captureMode.store(
             static_cast<uint32_t>(CaptureMode::kMultiEndpointLoopback));
     }
@@ -788,11 +838,17 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
         waitHandles.reserve(endpoints.size() + 3);
         waitHandles.push_back(g_stopEvent);
         waitHandles.push_back(changeEvent);
+        // WaitForMultipleObjects returns the lowest-index signaled handle.
+        // Keep the periodic mixer ahead of endpoint notifications so a
+        // continuously active render endpoint cannot starve mixing and fill
+        // the bounded per-endpoint ring. The timer branch drains every
+        // endpoint before it mixes the next period.
+        const size_t timerIndex = waitHandles.size();
+        waitHandles.push_back(mixerTimer);
+        const size_t endpointStartIndex = waitHandles.size();
         for (const auto& endpoint : endpoints) {
             waitHandles.push_back(endpoint.captureEvent);
         }
-        const size_t timerIndex = waitHandles.size();
-        waitHandles.push_back(mixerTimer);
 
         const DWORD waitResult = WaitForMultipleObjects(
             static_cast<DWORD>(waitHandles.size()), waitHandles.data(),
@@ -813,12 +869,6 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
             g_endpointRebuildCount.fetch_add(1);
             result = EnumerateActiveEndpointsWithRetry(
                 enumerator, format, &endpoints);
-        } else if (signaledIndex >= 2 && signaledIndex < timerIndex) {
-            result = DrainEndpoint(&endpoints[signaledIndex - 2]);
-            if (FAILED(result)) {
-                SetEvent(changeEvent);
-                result = S_OK;
-            }
         } else if (signaledIndex == timerIndex) {
             // Event handles are the normal wake-up mechanism. Polling once per
             // mixer period is intentional as a compatibility guard for older
@@ -826,6 +876,27 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
             // signal an event until a render client advances the stream.
             DrainAllEndpoints(&endpoints, changeEvent);
             MixEndpointPeriod(&endpoints);
+            // A scheduler wake can span more than one 10 ms audio period.
+            // Drain a bounded number of additional complete periods while
+            // retaining one period as jitter cushion. This follows the audio
+            // clock over time without allowing a slow timer wake to grow into
+            // ring loss or unbounded transport bursts.
+            constexpr size_t kMaximumCatchUpPeriods = 4;
+            for (size_t period = 0;
+                 period < kMaximumCatchUpPeriods &&
+                 MaximumQueuedEndpointFrames(endpoints) >=
+                     kMixerFrames * 2;
+                 ++period) {
+                MixEndpointPeriod(&endpoints);
+            }
+        } else if (signaledIndex >= endpointStartIndex &&
+                   signaledIndex < waitHandles.size()) {
+            result = DrainEndpoint(
+                &endpoints[signaledIndex - endpointStartIndex]);
+            if (FAILED(result)) {
+                SetEvent(changeEvent);
+                result = S_OK;
+            }
         } else {
             result = E_UNEXPECTED;
         }
@@ -846,24 +917,26 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
 }
 #endif
 
-SOCKET ConnectLoopback(int port) {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
-    while (g_transportRunning.load() && std::chrono::steady_clock::now() < deadline) {
-        SOCKET socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (socket == INVALID_SOCKET) return INVALID_SOCKET;
-        int one = 1;
-        int timeout = 5000;
-        setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof(one));
-        setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
-        setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout));
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_port = htons(static_cast<u_short>(port));
-        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        if (connect(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0) return socket;
-        closesocket(socket);
-        Sleep(100);
+SOCKET ConnectLoopbackOnce(int port) {
+    SOCKET socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (socket == INVALID_SOCKET) return INVALID_SOCKET;
+    int one = 1;
+    int timeout = 5000;
+    setsockopt(socket, IPPROTO_TCP, TCP_NODELAY,
+        reinterpret_cast<const char*>(&one), sizeof(one));
+    setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO,
+        reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+    setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO,
+        reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(static_cast<u_short>(port));
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (connect(socket, reinterpret_cast<sockaddr*>(&address),
+                sizeof(address)) == 0) {
+        return socket;
     }
+    closesocket(socket);
     return INVALID_SOCKET;
 }
 
@@ -878,49 +951,91 @@ DWORD WINAPI TransportThread(LPVOID) {
         callback = g_connectCallback;
     }
 
-    SOCKET socket = ConnectLoopback(port);
-    if (socket == INVALID_SOCKET) {
-        if (g_transportRunning.load()) SetError(2100, "Could not connect to the ADB loopback forward");
-        g_transportRunning.store(false);
-        return 1;
-    }
-    g_transportSocket.store(socket);
-
     const auto hello = EncodeHello(
         token, kSampleRate, static_cast<uint8_t>(kChannels),
         static_cast<uint8_t>(kBitsPerSample));
-    if (!SendFrame(socket, kTypeHello, 1, hello.data(), hello.size())) {
-        SetError(2101, "Could not send protocol HELLO to Android");
-        CloseTransportSocket();
-        g_transportRunning.store(false);
-        return 1;
+    SOCKET socket = INVALID_SOCKET;
+    ReceivedFrame ready;
+    ReadyPayload accepted;
+    bool handshakeComplete = false;
+    bool fatalHandshakeError = false;
+    const auto handshakeDeadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(8);
+
+    // An ADB forward's localhost listener can accept before Android has
+    // created the target LocalServerSocket. In that window TCP connect
+    // succeeds and adbd immediately closes the stream. Retry the complete
+    // connect + HELLO + READY transaction, not just the TCP connect call.
+    while (g_transportRunning.load() &&
+           std::chrono::steady_clock::now() < handshakeDeadline) {
+        socket = ConnectLoopbackOnce(port);
+        if (socket != INVALID_SOCKET) {
+            g_transportSocket.store(socket);
+            // Stop can race between the loop condition, connect(), and the
+            // atomic publication above. Recheck after publication so Stop can
+            // never miss a newly created socket and leave this worker blocked
+            // in a handshake receive timeout.
+            if (!g_transportRunning.load()) {
+                CloseTransportSocket();
+                socket = INVALID_SOCKET;
+                break;
+            }
+            if (SendFrame(socket, kTypeHello, 1, hello.data(), hello.size()) &&
+                ReceiveFrame(socket, &ready)) {
+                if (ready.type == kTypeError) {
+                    const std::string detail = SanitizeAndroidError(ready.payload);
+                    SetError(2107, detail.empty()
+                        ? "Android rejected the protocol handshake"
+                        : "Android handshake error: " + detail);
+                    fatalHandshakeError = true;
+                } else if (ready.type != kTypeReady) {
+                    SetError(2102, "Android returned an unexpected handshake message");
+                    fatalHandshakeError = true;
+                } else if (!DecodeReady(
+                               ready.payload.data(), ready.payload.size(),
+                               &accepted) ||
+                           accepted.sampleRate != kSampleRate ||
+                           accepted.channels != kChannels ||
+                           accepted.bitsPerSample != kBitsPerSample ||
+                           accepted.bufferFrames == 0 ||
+                           accepted.bufferFrames > kSampleRate * 5) {
+                    SetError(2109,
+                        "Android accepted an invalid or incompatible audio format");
+                    fatalHandshakeError = true;
+                } else {
+                    handshakeComplete = true;
+                }
+            }
+            if (handshakeComplete) break;
+            CloseTransportSocket();
+            socket = INVALID_SOCKET;
+            if (fatalHandshakeError) break;
+        }
+        Sleep(100);
     }
 
-    ReceivedFrame ready;
-    if (!ReceiveFrame(socket, &ready) || ready.type != kTypeReady) {
-        SetErrorIfNone(2102, "Android rejected or did not complete the protocol handshake");
+    if (!handshakeComplete) {
+        if (g_transportRunning.load()) {
+            SetErrorIfNone(
+                2102,
+                "Android receiver did not complete the ADB-forward handshake");
+        }
         CloseTransportSocket();
         g_transportRunning.store(false);
-        return 1;
-    }
-    ReadyPayload accepted;
-    if (!DecodeReady(ready.payload.data(), ready.payload.size(), &accepted) ||
-        accepted.sampleRate != kSampleRate ||
-        accepted.channels != kChannels ||
-        accepted.bitsPerSample != kBitsPerSample ||
-        accepted.bufferFrames == 0 ||
-        accepted.bufferFrames > kSampleRate * 5) {
-        SetError(2109, "Android accepted an invalid or incompatible audio format");
-        CloseTransportSocket();
-        g_transportRunning.store(false);
+        if (callback != nullptr && g_callbackAllowed.exchange(false)) {
+            callback("error");
+        }
         return 1;
     }
     g_androidBufferFrames.store(accepted.bufferFrames);
 
     g_connected.store(true);
-    if (callback != nullptr) callback("ready");
+    if (callback != nullptr && g_callbackAllowed.exchange(false)) {
+        callback("ready");
+    }
     uint32_t sequence = 2;
     auto nextPing = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    auto lastAndroidResponse = std::chrono::steady_clock::now();
     while (g_transportRunning.load()) {
         std::vector<uint8_t> chunk;
         {
@@ -950,11 +1065,21 @@ DWORD WINAPI TransportThread(LPVOID) {
         FD_SET(socket, &readSet);
         timeval noWait{};
         const int selected = select(0, &readSet, nullptr, nullptr, &noWait);
+        if (selected == SOCKET_ERROR) {
+            if (g_transportRunning.load()) {
+                SetError(2111, "Android transport readiness check failed");
+            }
+            break;
+        }
         if (selected > 0 && FD_ISSET(socket, &readSet)) {
             ReceivedFrame inbound;
             if (!ReceiveFrame(socket, &inbound)) break;
+            lastAndroidResponse = std::chrono::steady_clock::now();
             if (inbound.type == kTypeError) {
-                SetError(2107, "Android reported a playback error");
+                const std::string detail = SanitizeAndroidError(inbound.payload);
+                SetError(2107, detail.empty()
+                    ? "Android reported a playback error"
+                    : "Android playback error: " + detail);
                 break;
             }
             if (inbound.type == kTypeStats) {
@@ -973,8 +1098,15 @@ DWORD WINAPI TransportThread(LPVOID) {
                 break;
             }
         }
+        if (now - lastAndroidResponse >= std::chrono::seconds(10)) {
+            SetError(2113, "Android playback heartbeat timed out");
+            break;
+        }
     }
 
+    if (g_transportRunning.load()) {
+        SetErrorIfNone(2112, "Android USB audio transport closed unexpectedly");
+    }
     g_connected.store(false);
     g_transportRunning.store(false);
     g_captureRunning.store(false);
@@ -1002,6 +1134,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
     DWORD exitCode = 1;
     HRESULT globalResult = E_NOTIMPL;
     HRESULT multiEndpointResult = E_NOTIMPL;
+    CaptureMode selectedMode = CaptureMode::kNone;
 
     do {
         WAVEFORMATEX format{};
@@ -1021,8 +1154,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
         }
         g_globalLoopbackHresult.store(globalResult);
         if (SUCCEEDED(globalResult)) {
-            g_captureMode.store(
-                static_cast<uint32_t>(CaptureMode::kGlobalProcessLoopback));
+            selectedMode = CaptureMode::kGlobalProcessLoopback;
         } else {
             if (!g_captureRunning.load()) {
                 exitCode = 0;
@@ -1090,8 +1222,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
                 SetError(2204, message);
                 break;
             }
-            g_captureMode.store(
-                static_cast<uint32_t>(CaptureMode::kDefaultEndpointLoopback));
+            selectedMode = CaptureMode::kDefaultEndpointLoopback;
         }
 
         captureEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
@@ -1104,6 +1235,9 @@ DWORD WINAPI CaptureThread(LPVOID) {
         result = audioClient->Start();
         if (FAILED(result)) { SetError(2208, HresultMessage("Start system audio capture", result)); break; }
         audioStarted = true;
+        // Publish readiness only after WASAPI is actually running. The Dart
+        // supervisor treats a non-zero mode as the streaming-ready signal.
+        g_captureMode.store(static_cast<uint32_t>(selectedMode));
         exitCode = 0;
 
         HANDLE waitHandles[2] = {g_stopEvent, captureEvent};
@@ -1172,6 +1306,7 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
 
     g_captureRunning.store(false);
     g_transportRunning.store(false);
+    g_callbackAllowed.store(false);
     if (g_stopEvent != nullptr) SetEvent(g_stopEvent);
     CloseTransportSocket();
     g_queueCondition.notify_all();
@@ -1201,8 +1336,10 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
         g_connectCallback = callback;
     }
     g_transportRunning.store(true);
+    g_callbackAllowed.store(true);
     g_transportThread = CreateThread(nullptr, 0, TransportThread, nullptr, 0, nullptr);
     if (g_transportThread == nullptr) {
+        g_callbackAllowed.store(false);
         g_transportRunning.store(false);
         SetError(2004, "Could not create the native transport thread");
         return 0;
@@ -1216,7 +1353,10 @@ extern "C" __declspec(dllexport) int AudioCapture_Start() {
         SetError(2012, "Android transport is not ready for audio capture");
         return 0;
     }
-    if (g_captureRunning.load()) return 1;
+    if (g_captureRunning.load()) {
+        ClearError();
+        return 1;
+    }
     ClearError();
     if (g_captureThread != nullptr && !ReapThread(&g_captureThread, 1000)) {
         SetError(2005, "Previous capture thread did not stop in time");
@@ -1224,6 +1364,16 @@ extern "C" __declspec(dllexport) int AudioCapture_Start() {
     }
     ClearQueue();
     if (g_stopEvent != nullptr) ResetEvent(g_stopEvent);
+    // Closing the transport and starting capture can race on different
+    // threads. Recheck after ResetEvent so an already-signaled transport stop
+    // cannot be accidentally consumed by a new capture worker.
+    if (!g_connected.load() || !g_transportRunning.load()) {
+        if (g_stopEvent != nullptr) SetEvent(g_stopEvent);
+        SetError(
+            2012,
+            "Android transport stopped before audio capture could start");
+        return 0;
+    }
     g_captureRunning.store(true);
     g_captureThread = CreateThread(nullptr, 0, CaptureThread, nullptr, 0, nullptr);
     if (g_captureThread == nullptr) {
@@ -1235,6 +1385,7 @@ extern "C" __declspec(dllexport) int AudioCapture_Start() {
 }
 
 extern "C" __declspec(dllexport) void AudioCapture_Stop() {
+    g_callbackAllowed.store(false);
     g_captureRunning.store(false);
     g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
     g_activeEndpointCount.store(0);

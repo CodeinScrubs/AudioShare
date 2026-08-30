@@ -2,9 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 import '../models/device_model.dart';
 
 const _companionLaunchAction = 'com.audioshare.usbcompanion.LAUNCH_SESSION';
+const minimumCompanionVersionCode = 2;
+
+int? parseCompanionVersionCode(String packageDump) {
+  final match = RegExp(
+    r'^\s*versionCode=(\d+)\b',
+    multiLine: true,
+  ).firstMatch(packageDump);
+  return match == null ? null : int.tryParse(match.group(1)!);
+}
 
 class CompanionInstallation {
   const CompanionInstallation(this.packageName);
@@ -13,6 +24,13 @@ class CompanionInstallation {
 
   String get activityComponent =>
       '$packageName/com.audioshare.usbcompanion.BridgeActivity';
+
+  String get bundledApkName => switch (packageName) {
+        'com.audioshare.usbcompanion' => 'audioshare-companion.apk',
+        'com.audioshare.usbcompanion.debug' =>
+          'audioshare-companion-poc-debug.apk',
+        _ => throw StateError('Unsupported companion package: $packageName'),
+      };
 
   static const release = CompanionInstallation('com.audioshare.usbcompanion');
   static const debug = CompanionInstallation(
@@ -45,6 +63,30 @@ extension _LastOrNull<T> on Iterable<T> {
     }
     return result;
   }
+}
+
+AdbTransportType classifyWindowsAdbTransport(
+  String deviceId,
+  Map<String, String> attributes,
+) {
+  final normalizedId = deviceId.toLowerCase();
+  if (normalizedId.startsWith('emulator-') ||
+      normalizedId.startsWith('vsock:')) {
+    return AdbTransportType.emulator;
+  }
+  if (attributes.containsKey('usb')) return AdbTransportType.usb;
+
+  // ADB's Windows USB backend registers native USB transports without a
+  // devpath, so `adb devices -l` normally omits the `usb:` field that Linux
+  // and macOS builds expose. TCP and wireless-debugging serials remain
+  // syntactically identifiable; every remaining Windows hardware transport is
+  // therefore the positive USB case for this Windows-only host application.
+  final tcpSerial = RegExp(r'^(?:\[[^\]]+\]|[^:]+):\d{1,5}$');
+  final mdnsTlsSerial = normalizedId.contains('._adb-tls-connect._tcp');
+  if (tcpSerial.hasMatch(deviceId) || mdnsTlsSerial) {
+    return AdbTransportType.network;
+  }
+  return AdbTransportType.usb;
 }
 
 class AdbCommandRequest {
@@ -264,12 +306,17 @@ abstract interface class AdbController {
 }
 
 class AdbService implements AdbController {
-  AdbService({AdbCommandRunner? runner, String? adbPath})
-      : _runner = runner ?? ProcessAdbCommandRunner(),
-        _adbPath = adbPath ?? _defaultAdbPath();
+  AdbService({
+    AdbCommandRunner? runner,
+    String? adbPath,
+    String? companionDirectoryPath,
+  })  : _runner = runner ?? ProcessAdbCommandRunner(),
+        _adbPath = adbPath ?? _defaultAdbPath(),
+        _companionDirectoryPath = companionDirectoryPath;
 
   final AdbCommandRunner _runner;
   final String _adbPath;
+  final String? _companionDirectoryPath;
   final Map<String, DeviceModel> _deviceCache = {};
   bool _disposed = false;
   Process? _deviceTrackerProcess;
@@ -364,13 +411,7 @@ class AdbService implements AdbController {
           );
         }
       }
-      final transport = deviceId.startsWith('emulator-')
-          ? AdbTransportType.emulator
-          : attributes.containsKey('usb')
-              ? AdbTransportType.usb
-              : deviceId.contains(':')
-                  ? AdbTransportType.network
-                  : AdbTransportType.unknown;
+      final transport = classifyWindowsAdbTransport(deviceId, attributes);
       final transportId = int.tryParse(attributes['transport_id'] ?? '');
 
       DeviceModel? metadata;
@@ -526,14 +567,46 @@ class AdbService implements AdbController {
           timeout: const Duration(seconds: 6),
         ),
       );
-      if (result.succeeded && result.stdout.contains('package:')) {
-        return installation;
+      final packageAbsent = (result.exitCode == 0 || result.exitCode == 1) &&
+          result.stdout.trim().isEmpty &&
+          result.stderr.trim().isEmpty;
+      if (packageAbsent) continue;
+      if (!result.succeeded) throw AdbCommandException(result);
+      final installedApkPath = _parseInstalledBaseApkPath(result.stdout);
+      if (installedApkPath == null) {
+        throw FormatException(
+          'The installed ${installation.packageName} package does not have '
+          'one valid base APK.',
+        );
       }
-      if (result.timedOut ||
-          result.spawnError != null ||
-          result.exitCode == null ||
-          result.exitCode != 0) {
-        throw AdbCommandException(result);
+      final packageDump = await _required(
+        AdbCommandRequest(
+          operation: 'check Android companion compatibility',
+          arguments: [
+            '-s',
+            deviceId,
+            'shell',
+            'dumpsys',
+            'package',
+            installation.packageName,
+          ],
+          timeout: const Duration(seconds: 8),
+        ),
+      );
+      final versionCode = parseCompanionVersionCode(packageDump.stdout);
+      if (versionCode == null) {
+        throw FormatException(
+          'Could not read the installed companion version for '
+          '${installation.packageName}.',
+        );
+      }
+      if (versionCode >= minimumCompanionVersionCode &&
+          await _matchesBundledCompanion(
+            deviceId,
+            installation,
+            installedApkPath,
+          )) {
+        return installation;
       }
     }
     return null;
@@ -541,20 +614,78 @@ class AdbService implements AdbController {
 
   @override
   String? bundledCompanionApkPath() {
-    final executableDirectory = File(Platform.resolvedExecutable).parent.path;
-    final androidDirectory = Directory(
-      '$executableDirectory${Platform.pathSeparator}android',
-    );
-    for (final name in const [
-      'audioshare-companion.apk',
-      'audioshare-companion-poc-debug.apk',
+    for (final installation in const [
+      CompanionInstallation.release,
+      CompanionInstallation.debug,
     ]) {
-      final candidate = File(
-        '${androidDirectory.path}${Platform.pathSeparator}$name',
-      );
-      if (candidate.existsSync()) return candidate.path;
+      final path = _bundledCompanionPath(installation);
+      if (path != null) return path;
     }
     return null;
+  }
+
+  String? _bundledCompanionPath(CompanionInstallation installation) {
+    final directory = _companionDirectoryPath ??
+        '${File(Platform.resolvedExecutable).parent.path}'
+            '${Platform.pathSeparator}android';
+    final candidate = File(
+      '$directory${Platform.pathSeparator}${installation.bundledApkName}',
+    );
+    return candidate.existsSync() ? candidate.path : null;
+  }
+
+  String? _parseInstalledBaseApkPath(String output) {
+    final packageLines = const LineSplitter()
+        .convert(output)
+        .map((line) => line.trim())
+        .where((line) => line.startsWith('package:'))
+        .toList(growable: false);
+    if (packageLines.length != 1) return null;
+    final path = packageLines.single.substring('package:'.length);
+    final safePath = RegExp(
+      r'^/[A-Za-z0-9._~+=@%/-]+/base\.apk$',
+    );
+    return safePath.hasMatch(path) ? path : null;
+  }
+
+  Future<bool> _matchesBundledCompanion(
+    String deviceId,
+    CompanionInstallation installation,
+    String installedApkPath,
+  ) async {
+    final bundledPath = _bundledCompanionPath(installation);
+    if (bundledPath == null) return false;
+    final result = await _required(
+      AdbCommandRequest(
+        operation: 'verify installed Android companion APK',
+        arguments: [
+          '-s',
+          deviceId,
+          'shell',
+          'sha256sum',
+          installedApkPath,
+        ],
+        timeout: const Duration(seconds: 12),
+      ),
+    );
+    String? installedHash;
+    for (final rawLine in const LineSplitter().convert(result.stdout)) {
+      final fields = rawLine.trim().split(RegExp(r'\s+'));
+      if (fields.length == 2 &&
+          fields[1] == installedApkPath &&
+          RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(fields[0])) {
+        installedHash = fields[0].toLowerCase();
+        break;
+      }
+    }
+    if (installedHash == null) {
+      throw FormatException(
+        'Android did not return a valid companion APK SHA-256.',
+      );
+    }
+    final bundledHash =
+        (await sha256.bind(File(bundledPath).openRead()).first).toString();
+    return installedHash == bundledHash;
   }
 
   @override

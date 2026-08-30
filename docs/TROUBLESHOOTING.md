@@ -19,6 +19,9 @@ EDR, UAC, or organizational security controls.
 ## 2. Companion launch
 
 - Select **Install companion** only for an authorized USB phone.
+- If an app has the expected package/version but its installed base APK does
+  not exactly match the one bundled with this Windows build, AudioShare treats
+  it as missing. Reinstall the bundled companion; do not bypass this check.
 - If the bundled APK is missing, the Windows package is incomplete.
 - If Android rejects installation, capture the exact ADB diagnostic. Do not
   weaken Play Protect or device policy; a signed production APK may be required.
@@ -39,9 +42,13 @@ EDR, UAC, or organizational security controls.
 ## 4. Android speaker
 
 - Raise media volume and disconnect or disable an unwanted Bluetooth route.
-- The companion prefers the built-in speaker, but Android ultimately controls
-  routing and audio focus.
+- The companion requests and verifies the built-in speaker route. If Android
+  selects Bluetooth, wired, or USB audio instead, the stream fails with that
+  route named rather than silently playing through the wrong device.
 - Keep the foreground playback notification/service allowed by device policy.
+- Open the companion once on Android 13+ to grant notification permission if
+  you want its Disconnect action visible; USB playback itself does not wait on
+  that dialog.
 
 ## 5. Windows source sound
 

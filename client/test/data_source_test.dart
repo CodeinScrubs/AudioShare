@@ -44,6 +44,7 @@ class FakeAdbController implements AdbController {
   int removeForwardCalls = 0;
   int launchFailuresRemaining = 0;
   bool disposed = false;
+  Completer<void>? removeForwardGate;
 
   @override
   String get executablePath => 'fake-adb.exe';
@@ -119,6 +120,7 @@ class FakeAdbController implements AdbController {
   @override
   Future<void> removeForward(AdbForwardSession session) async {
     removeForwardCalls++;
+    await removeForwardGate?.future;
   }
 
   @override
@@ -274,6 +276,7 @@ void main() {
   });
 
   tearDown(() async {
+    await source?.shutdown();
     source?.dispose();
     source = null;
     await Future<void>.delayed(Duration.zero);
@@ -409,6 +412,36 @@ void main() {
     expect(dataSource.overallPhase, ConnectionPhase.waitingForPhone);
   });
 
+  test('fatal native handshake errors are surfaced without waiting for timeout',
+      () async {
+    adb.snapshot = [usbPhone()];
+    audio.autoReady = false;
+    final dataSource = createSource(
+      reconnectDelay: const Duration(hours: 1),
+    );
+    await waitUntil(
+      () => dataSource.overallPhase == ConnectionPhase.handshaking,
+    );
+
+    audio.nextError = const AudioCaptureError(
+      2107,
+      'Android handshake error: built-in speaker unavailable',
+    );
+    audio.connectCallback!('error');
+    await waitUntil(
+      () =>
+          dataSource.lastError?.type == UiErrorType.transportHandshakeFailed &&
+          dataSource.overallPhase == ConnectionPhase.reconnecting,
+    );
+
+    expect(dataSource.lastError?.nativeError?.code, 2107);
+    expect(
+      dataSource.lastError?.nativeError?.message,
+      contains('built-in speaker unavailable'),
+    );
+    expect(dataSource.getConnectState('USB123'), 0);
+  });
+
   test('manual disconnect stays disconnected until manual connect or replug',
       () async {
     adb.snapshot = [usbPhone()];
@@ -456,16 +489,40 @@ void main() {
     adb.snapshot = [usbPhone()];
     audio.modeAfterStart = WindowsCaptureMode.inactive;
     final dataSource = createSource(
-      captureStartupTimeout: const Duration(milliseconds: 20),
+      // Leave enough scheduling headroom for a loaded Windows CI runner while
+      // still exercising the bounded readiness timeout.
+      captureStartupTimeout: const Duration(milliseconds: 100),
       reconnectDelay: const Duration(hours: 1),
     );
 
     await waitUntil(
-      () => dataSource.lastError?.type == UiErrorType.captureStartFailed,
+      () =>
+          dataSource.lastError?.type == UiErrorType.captureStartFailed &&
+          dataSource.overallPhase == ConnectionPhase.reconnecting &&
+          dataSource.getConnectState('USB123') == 0,
     );
 
     expect(dataSource.getConnectState('USB123'), 0);
     expect(dataSource.overallPhase, ConnectionPhase.reconnecting);
     expect(audio.startCalls, 1);
+  });
+
+  test('normal shutdown awaits exact ADB forward cleanup', () async {
+    adb.snapshot = [usbPhone()];
+    adb.removeForwardGate = Completer<void>();
+    final dataSource = createSource();
+    await waitUntil(
+      () => dataSource.overallPhase == ConnectionPhase.streaming,
+    );
+
+    final shutdown = dataSource.shutdown();
+    await Future<void>.delayed(Duration.zero);
+    expect(adb.removeForwardCalls, 1);
+    expect(adb.disposed, isFalse);
+
+    adb.removeForwardGate!.complete();
+    await shutdown;
+    expect(adb.disposed, isTrue);
+    expect(audio.disposeCalls, 1);
   });
 }

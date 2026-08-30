@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -91,7 +92,7 @@ class AudioShareHomePage extends StatefulWidget {
 class _AudioShareHomePageState extends State<AudioShareHomePage>
     with WidgetsBindingObserver {
   late final DataSource _dataSource;
-  bool _dataSourceDisposed = false;
+  Future<void>? _dataSourceShutdown;
   bool _showingError = false;
 
   @override
@@ -104,14 +105,24 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.detached) _cleanupDataSource();
+    if (state == AppLifecycleState.detached) {
+      unawaited(_shutdownDataSource());
+    }
   }
 
-  void _cleanupDataSource() {
-    if (_dataSourceDisposed) return;
-    _dataSourceDisposed = true;
+  Future<void> _shutdownDataSource() {
+    final existing = _dataSourceShutdown;
+    if (existing != null) return existing;
     _dataSource.removeListener(_onDataSourceChanged);
-    _dataSource.dispose();
+    final shutdown = _dataSource.shutdown().whenComplete(_dataSource.dispose);
+    _dataSourceShutdown = shutdown;
+    return shutdown;
+  }
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    await _shutdownDataSource();
+    return AppExitResponse.exit;
   }
 
   void _onDataSourceChanged() {
@@ -187,7 +198,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _cleanupDataSource();
+    unawaited(_shutdownDataSource());
     super.dispose();
   }
 

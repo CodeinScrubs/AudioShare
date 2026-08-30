@@ -1,7 +1,9 @@
 # AudioShare USB Companion Architecture
 
-Status: selected product direction; physical ADB/Android 14 POCs remain required
-before firewall, launch, routing, or latency claims.
+Status: implemented production direction. Real Android emulator transport,
+route, screen-off, and cleanup POCs pass; a physical Samsung and restricted
+Windows target remain required for audible-output, USB-cable, firewall, and
+latency claims.
 
 ## Product scope
 
@@ -17,8 +19,9 @@ process tree so every other ordinary render stream is included. Activation is
 feature-probed rather than selected from a version string.
 
 After one-time APK installation, USB-debugging enablement, and PC authorization,
-the daily target is: log in, host runs in the tray, connect the remembered phone,
-and system audio starts without opening either UI or entering an IP address.
+the daily target is: start the host, connect the remembered phone, and system
+audio starts without opening the Android UI or entering an IP address. Automatic
+Windows startup and tray behavior are future conveniences, not current claims.
 
 ## Selected topology
 
@@ -49,7 +52,7 @@ all ordinary applications + Windows sounds
                          |
                     AudioTrack
                          |
-               built-in speaker preference
+          verified built-in speaker route
 ```
 
 The Android companion has no IP listener and no `INTERNET` permission. The
@@ -73,7 +76,8 @@ Daily:
 - supervise `adb track-devices -l` with a polling recovery path;
 - classify transports, prefer the remembered authorized USB phone, and select
   the sole authorized USB phone automatically when no remembered choice exists;
-- check package/protocol compatibility;
+- check package/protocol compatibility and require the installed base APK's
+  SHA-256 to match the artifact bundled with this host build;
 - generate a unique short socket name and 256-bit token;
 - create `forward --no-rebind tcp:0 localabstract:<socket>`;
 - explicitly launch the bridge Activity over ADB;
@@ -88,34 +92,40 @@ phase failures clean up the owned mapping and retry with bounded exponential
 backoff. The UI does not report `streaming` until the native DLL exposes a
 non-inactive capture mode.
 
-The launch ordering will be finalized by the device POC. A forward can be
-created before or after the Android socket exists, but the production state
-machine must have finite phase deadlines either way.
+The production ordering creates the randomized ADB forward before launching the
+Android bridge. Because ADB can accept the Windows TCP connection before the
+Android abstract socket exists, the native transport retries the complete
+connect + HELLO + READY transaction within a finite eight-second deadline.
 
 ## Android boundaries
 
 The separate `client android app` Git repository contains the companion. Its
 initial POC uses:
 
-- Kotlin through AGP 9.1 built-in Kotlin support;
+- Kotlin through AGP 9.3.2 built-in Kotlin support and checksum-pinned Gradle
+  9.5.1;
 - target/compile SDK 36 and minimum SDK 26;
-- an exported, no-history bridge Activity with no privileged operation;
+- an exported, no-history bridge Activity gated by the shell-only `DUMP`
+  permission;
 - an unexported `mediaPlayback` foreground service;
 - `LocalServerSocket` in Android's abstract namespace;
 - a randomized session token verified with constant-time comparison;
-- a bounded parser and eight-chunk playback queue;
-- `AudioTrack` streaming PCM with low-latency mode and built-in-speaker
-  preference; and
+- a bounded parser and 32-chunk (at most 256 KiB) transient playback queue;
+- `AudioTrack` streaming PCM with low-latency mode, required built-in-speaker
+  selection, and periodic verification of the actual route;
+- a session-scoped partial wake lock for screen-off playback; and
 - a watchdog that closes a receiver when the host never connects.
 
-Only `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_MEDIA_PLAYBACK` are declared.
-Audio is memory-to-AudioTrack only. There is no network, microphone, camera,
-location, storage, Bluetooth, analytics, telemetry, or cloud dependency.
+Only `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`,
+`POST_NOTIFICATIONS`, and `WAKE_LOCK` are declared. Audio is
+memory-to-AudioTrack only. There is no network, microphone, camera, location,
+storage, Bluetooth, analytics, telemetry, or cloud dependency.
 
-Open Android POC items include locked-screen ADB launch, force-stop behavior,
-audio focus, route confirmation, notification-denied behavior, screen-off/Doze,
-watchdog timing, AudioTrack failure propagation, repeated reconnect, and
-long-run drift/underrun evidence.
+Open physical-device items include force-stop policy, notification-denied
+behavior on the target Samsung, repeated cable reconnect, audible route proof,
+measured latency, and long-run drift/underrun evidence. The emulator has already
+exercised cold install, ADB launch, playback-head and route readiness, error
+propagation, exact cleanup, and a 60-second screen-off session.
 
 ## Windows boundaries
 
@@ -144,9 +154,9 @@ still measurement-driven follow-up work.
 
 ## Evidence gate
 
-Hardware-independent companion compilation, unit tests, lint, APK manifest
-inspection, and release build can be completed locally. An authorized Android
-device is still required to prove `adb forward`, automatic Android 14 launch,
-speaker routing, screen-off operation, binary throughput, reconnect, and exact
-mapping cleanup. The restricted Windows target is required to prove no Defender
-prompt, standard-user policy acceptance, and final latency.
+Companion compilation, unit tests, lint, APK inspection, ADB forwarding,
+authenticated streaming, emulated speaker routing, screen-off wake-lock
+continuity, and exact mapping cleanup have local evidence. A physical phone is
+still required to prove the actual USB cable and audible built-in speaker. The
+restricted Windows target is required to prove no Defender prompt, standard-user
+policy acceptance, and final latency.

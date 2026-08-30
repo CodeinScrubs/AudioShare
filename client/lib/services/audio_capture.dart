@@ -109,22 +109,14 @@ abstract interface class AudioCaptureController {
   void dispose();
 }
 
-AudioCaptureService? _activeService;
-
-void _handleConnect(Pointer<Int8> connectCodePtr) {
-  final service = _activeService;
-  if (service != null && service.onConnected != null) {
-    final bytes = <int>[];
-    var i = 0;
-    while (true) {
-      final byte = (connectCodePtr + i).value;
-      if (byte == 0) break;
-      bytes.add(byte);
-      i++;
-    }
-    final connectCode = utf8.decode(bytes, allowMalformed: true);
-    service.onConnected!(connectCode);
+String _decodeConnectStatus(Pointer<Int8> connectCodePtr) {
+  final bytes = <int>[];
+  for (var index = 0; index < 64; index++) {
+    final byte = (connectCodePtr + index).value;
+    if (byte == 0) break;
+    bytes.add(byte & 0xff);
   }
+  return utf8.decode(bytes, allowMalformed: true);
 }
 
 class AudioCaptureService implements AudioCaptureController {
@@ -152,7 +144,6 @@ class AudioCaptureService implements AudioCaptureController {
 
   bool _initialized = false;
   String? _libraryLoadError;
-  void Function(String connectCode)? onConnected;
 
   NativeCallable<ConnectCallbackNative>? _connectCallback;
 
@@ -248,7 +239,6 @@ class AudioCaptureService implements AudioCaptureController {
   bool initialize() {
     if (_initialized) return true;
     if (_initialize == null) return false;
-    _activeService = this;
     _initialized = _initialize!() != 0;
     return _initialized;
   }
@@ -262,15 +252,28 @@ class AudioCaptureService implements AudioCaptureController {
     void Function(String status) onConnect,
   ) {
     if (!_initialized || _connect == null) return false;
-    onConnected = onConnect;
-    _connectCallback?.close();
-    _connectCallback = NativeCallable<ConnectCallbackNative>.listener(
-      _handleConnect,
+    // Each connection owns a closure containing that supervisor generation.
+    // AudioCapture_Connect synchronously reaps the previous native worker
+    // before it returns success, so only then is it safe to close the previous
+    // callback. A callback already queued into Dart either retains its original
+    // closure or is discarded; it can never be rebound to a newer generation.
+    final nextCallback = NativeCallable<ConnectCallbackNative>.listener(
+      (Pointer<Int8> connectCodePtr) =>
+          onConnect(_decodeConnectStatus(connectCodePtr)),
     );
+    final previousCallback = _connectCallback;
     final token = tokenHex.toNativeUtf8(allocator: calloc).cast<Int8>();
+    var retainedNextCallback = false;
     try {
-      return _connect!(port, token, _connectCallback!.nativeFunction) != 0;
+      final connected =
+          _connect!(port, token, nextCallback.nativeFunction) != 0;
+      if (!connected) return false;
+      _connectCallback = nextCallback;
+      retainedNextCallback = true;
+      previousCallback?.close();
+      return true;
     } finally {
+      if (!retainedNextCallback) nextCallback.close();
       calloc.free(token);
     }
   }

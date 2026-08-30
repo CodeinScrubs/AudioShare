@@ -56,6 +56,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Native audio capture library
 add_library(audio_capture SHARED "${CMAKE_CURRENT_SOURCE_DIR}/../native/audio_capture.cpp")
+set_target_properties(audio_capture PROPERTIES PREFIX "")
 target_link_libraries(audio_capture PRIVATE mmdevapi ole32 ws2_32 winmm)
 if(MSVC)
   target_compile_options(audio_capture PRIVATE /utf-8)
@@ -63,6 +64,24 @@ else()
   target_compile_options(audio_capture PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
 apply_standard_settings(audio_capture)
+
+# Native regression executables are intentionally outside the default Flutter
+# build graph. Hosted Windows CI builds them explicitly with MSVC, copies the
+# production DLL beside the integration harness, and runs the protocol plus
+# transport-only cases that do not depend on an audio device being present.
+add_executable(wire_protocol_test EXCLUDE_FROM_ALL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../native/wire_protocol_test.cpp")
+apply_standard_settings(wire_protocol_test)
+
+add_executable(system_capture_integration_test EXCLUDE_FROM_ALL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../native/system_capture_integration_test.cpp")
+target_link_libraries(system_capture_integration_test PRIVATE ws2_32)
+apply_standard_settings(system_capture_integration_test)
+add_dependencies(system_capture_integration_test audio_capture)
+add_custom_command(TARGET system_capture_integration_test POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "$<TARGET_FILE:audio_capture>"
+    "$<TARGET_FILE_DIR:system_capture_integration_test>")
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
@@ -130,6 +149,22 @@ if(AUDIOSHARE_COMPANION_APK)
   if(NOT EXISTS "${AUDIOSHARE_COMPANION_APK}")
     message(FATAL_ERROR "AUDIOSHARE_COMPANION_APK does not exist")
   endif()
+  execute_process(
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+      -File "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/verify_companion_apk.ps1"
+      -Apk "${AUDIOSHARE_COMPANION_APK}"
+      -ExpectedPackage "com.audioshare.usbcompanion"
+      -MinimumVersionCode 2
+    RESULT_VARIABLE COMPANION_VERIFY_RESULT
+    OUTPUT_VARIABLE COMPANION_VERIFY_OUTPUT
+    ERROR_VARIABLE COMPANION_VERIFY_ERROR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_STRIP_TRAILING_WHITESPACE)
+  if(NOT COMPANION_VERIFY_RESULT EQUAL 0)
+    message(FATAL_ERROR
+      "Companion APK verification failed:\n${COMPANION_VERIFY_OUTPUT}\n${COMPANION_VERIFY_ERROR}")
+  endif()
+  message(STATUS "${COMPANION_VERIFY_OUTPUT}")
   install(FILES "${AUDIOSHARE_COMPANION_APK}"
     DESTINATION "${CMAKE_INSTALL_PREFIX}/android"
     RENAME "audioshare-companion.apk"

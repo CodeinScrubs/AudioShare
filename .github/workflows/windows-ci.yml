@@ -1,0 +1,69 @@
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: powershell
+        working-directory: client
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Resolve dependencies
+        run: |
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter gen-l10n
+
+      - name: Verify Dart formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze and test
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build Windows Debug package with MSVC
+        run: flutter build windows --debug
+
+      - name: Build and run native transport regressions with MSVC
+        run: |
+          cmake --build build/windows/x64 --config Debug --target wire_protocol_test system_capture_integration_test
+          $wireTest = Get-ChildItem build/windows/x64 -Recurse -Filter wire_protocol_test.exe | Select-Object -First 1
+          $integrationTest = Get-ChildItem build/windows/x64 -Recurse -Filter system_capture_integration_test.exe | Select-Object -First 1
+          if (-not $wireTest -or -not $integrationTest) {
+            throw 'Native regression executables were not produced.'
+          }
+          & $wireTest.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $integrationTest.DirectoryName
+          try {
+            & $integrationTest.FullName --expect-handshake-stop
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $integrationTest.FullName --expect-handshake-error
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $integrationTest.FullName --expect-disconnect-error
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            Pop-Location
+          }
