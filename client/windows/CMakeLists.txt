@@ -244,21 +244,22 @@ include(InstallRequiredSystemLibraries)
 # intentionally excludes itself; the outer ZIP hash is printed by the release
 # packaging script and provides the checksum for the complete archive.
 install(CODE "
+  set(_audioshare_bundle_dir \"$<TARGET_FILE_DIR:${BINARY_NAME}>\")
   file(GLOB_RECURSE _audioshare_manifest_files LIST_DIRECTORIES false
-    \"\${CMAKE_INSTALL_PREFIX}/*\")
+    \"\${_audioshare_bundle_dir}/*\")
   list(SORT _audioshare_manifest_files)
   set(_audioshare_manifest \"# SHA-256  relative/path\\n\")
   foreach(_audioshare_file IN LISTS _audioshare_manifest_files)
     if(NOT _audioshare_file MATCHES \"/SHA256SUMS[.]txt$\")
       file(SHA256 \"\${_audioshare_file}\" _audioshare_sha256)
       file(RELATIVE_PATH _audioshare_relative
-        \"\${CMAKE_INSTALL_PREFIX}\" \"\${_audioshare_file}\")
+        \"\${_audioshare_bundle_dir}\" \"\${_audioshare_file}\")
       string(REPLACE \"\\\\\" \"/\" _audioshare_relative
         \"\${_audioshare_relative}\")
       string(APPEND _audioshare_manifest
         \"\${_audioshare_sha256}  \${_audioshare_relative}\\n\")
     endif()
   endforeach()
-  file(WRITE \"\${CMAKE_INSTALL_PREFIX}/SHA256SUMS.txt\"
+  file(WRITE \"\${_audioshare_bundle_dir}/SHA256SUMS.txt\"
     \"\${_audioshare_manifest}\")
 " COMPONENT Runtime)
