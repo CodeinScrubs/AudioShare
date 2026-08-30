@@ -109,7 +109,7 @@ The separate `client android app` Git repository contains the companion. Its
 initial POC uses:
 
 - Kotlin through AGP 9.3.2 built-in Kotlin support and checksum-pinned Gradle
-  9.5.1;
+  9.7.1;
 - target/compile SDK 36 and minimum SDK 26;
 - an exported, no-history bridge Activity gated by the shell-only `DUMP`
   permission;
