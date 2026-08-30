@@ -6,9 +6,9 @@ firewall-independent Windows workflow.
 
 Development status: the Android companion passes clean unit, lint, debug, and
 release builds. A real Android 16 emulator passed a cold-install, authenticated
-ADB-forwarded 60-second screen-off stream with 2,880,000 exact PCM frames,
-enforced speaker route, zero drops, wake-lock continuity, and exact cleanup. The
-Windows capture hierarchy passes strict
+ADB-forwarded 60-second display-confirmed-off stream with 2,880,000 exact PCM
+frames, enforced speaker route, zero drops, wake-lock continuity, and exact
+cleanup. The Windows capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
 non-zero PCM. Flutter analysis and 20 supervisor/lifecycle/security tests pass. A physical
 Samsung audible-output/USB-cable run, restricted-PC firewall check, measured

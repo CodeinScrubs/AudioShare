@@ -5,11 +5,36 @@ global, multi-endpoint, and default fallback capture pass native integration.
 The actual Android app passes ADB-forwarded protocol/playback tests on an Android
 16 emulator. Physical USB-cable and audible phone-speaker acceptance remain open.
 
-Recorded: 2026-08-29–30 (Asia/Tehran)
+Recorded: 2026-08-29–31 (Asia/Tehran)
 
 This report distinguishes command-surface/static evidence from an actual
 end-to-end proof. It must not be used to claim that USB audio or firewall
 acceptance has passed.
+
+## 2026-08-31 deterministic screen-off regression
+
+A repeated cold-process emulator run exposed ambiguity in the original smoke
+sequence. When the harness locked an already-started virtual `AudioTrack`, the
+emulator could block a playback write for about 100 ms while the host-side
+Python process also caught up several 20 ms chunks. The Android receiver then
+discarded the oldest complete chunks at its documented 80 ms live edge. That is
+the intended latency-preserving policy, not queue corruption, but the harness's
+unconditional zero-drop assertion made the power transition look like failed
+steady screen-off playback.
+
+The screen-off mode now records the original display state, completes and
+verifies the display-off transition before launching the bridge, checks again
+that the display remains off while the session wake lock is held, and restores
+the original state during cleanup. No playback or buffering policy was widened.
+Four forced-cold 12-second runs passed, followed by the full regression:
+
+```text
+DEVICE_PROTOCOL_SMOKE_OK serial=emulator-5554 frames=2880000 dropped=0 queue=0 buffer=8720 wake_lock=True screen_off=True service_stopped=True forward_removed=True
+```
+
+This proves deterministic emulator continuity once the screen is off. It does
+not replace the open physical-phone test for an audible lock transition,
+device-specific power policy, or USB-cable behavior.
 
 ## 2026-08-30 hardening checkpoint
 
