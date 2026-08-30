@@ -273,13 +273,17 @@ host PID. In that inverse mode, Windows supplies all other ordinary render
 streams through one endpoint-independent capture client.
 
 Activation and canonical-format initialization are the feature probe; a version
-string is not the runtime gate. If global activation is unavailable, the current
-compatibility path follows the default console render endpoint with ordinary
-WASAPI loopback. That fallback is broad Windows 10/11 compatibility, but it does
-not capture an application explicitly routed to another output endpoint. A
-complete legacy fallback therefore still requires endpoint enumeration,
-per-endpoint queues, conversion, mixing, duplicate policy, hotplug handling, and
-drift measurement across independent clocks.
+string is not the runtime gate. If global activation is unavailable, the
+compatibility path enumerates active render endpoints and opens ordinary WASAPI
+loopback on each one. Each endpoint has a bounded PCM queue; a host-side 10 ms
+mixer drains the queues, saturates the stereo sum, and emits canonical PCM16.
+Endpoint notifications wake the capture thread for a controlled teardown/rebuild,
+so applications explicitly routed to different outputs remain in scope. If
+enumeration yields no usable endpoint, the implementation falls back to the
+default console endpoint as a last resort. Independent endpoint clocks mean this
+mode records queue drops, mixer underruns, discontinuities, and rebuilds; exact
+long-run drift correction and duplicate mirrored-output suppression remain
+measurement-driven follow-up work.
 
 If global activation and the endpoint fallback both fail, capture fails with an
 actionable native HRESULT. The application will not install or emulate a virtual
@@ -294,7 +298,7 @@ A dedicated capture thread owns the complete COM/WASAPI lifetime:
   through an agile completion handler;
 - use an explicit 48 kHz stereo PCM16 format because the virtual client does not
   implement `GetMixFormat`/`IsFormatSupported`;
-- on fallback, enumerate/activate the default `IMMDevice` there;
+- on fallback, enumerate/activate each usable active render `IMMDevice` there;
 - initialize a shared-mode loopback client with
   `AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK`;
 - obtain, use, and release `IAudioCaptureClient` on that same thread;
@@ -303,13 +307,16 @@ A dedicated capture thread owns the complete COM/WASAPI lifetime:
   exits.
 
 Windows 10 version 1703 and later supports event-driven endpoint loopback. The
-capture loop drains every queued packet on each event and handles silent,
-discontinuous, timestamp-error, service-stopped, and device-invalidated flags
-explicitly. The global path is independent of default-device changes; the
-compatibility path still needs controlled default-device-change reactivation.
-Both current modes request Windows engine conversion directly into canonical
-PCM. Multi-endpoint fallback work must still validate actual endpoint formats
-and normalize PCM16/24/32 or float32, including multichannel layouts.
+capture loop drains every queued packet on each event, converts silent buffers,
+records data discontinuities in the compatibility mixer, and treats failed
+buffer reads (including service-stop/device-invalidation results) as a rebuild
+signal. The global path is independent of default-device changes. The
+multi-endpoint compatibility path registers `IMMNotificationClient`, rebuilds on
+endpoint changes, and uses a waitable 10 ms mixer timer alongside endpoint
+events. The last-resort default path remains tied to the current console
+endpoint. All paths request Windows engine conversion directly into canonical
+PCM; endpoint format and multichannel behavior still require target-device
+validation.
 
 The capture thread copies complete WASAPI packets into a bounded real-time
 queue and never performs blocking socket writes. A separate sender thread owns
@@ -441,7 +448,8 @@ Run on the locked-down Windows machine with a physical Samsung device:
 6. Confirm the UI reports global mode, then play simultaneous audio from
    multiple applications plus a Windows system sound. Route one application to
    another endpoint and confirm both remain captured. Separately force/test
-   compatibility mode and verify its explicit default-output-only label.
+    multi-endpoint compatibility mode and verify its active-endpoint count; also
+    force the final default-output mode and verify its explicit limitation.
 7. Measure capture-to-speaker latency, first-audio time, underruns, and sustained
    stability for both buffer modes. Record device model, Android version, sample
    route, and test duration.
@@ -459,9 +467,10 @@ run on the target hardware.
    regression tests.
 2. **Forward transport:** nonce LocalServerSocket, exact `tcp:0` mapping,
    outbound native connect, versioned handshake, owned-resource cleanup.
-3. **Windows capture:** global exclude-tree loopback, event-driven default-output
-   fallback, correct COM/thread ownership, format conversion, bounded queue,
-   error propagation, followed by legacy multi-endpoint aggregation.
+3. **Windows capture:** global exclude-tree loopback, event-driven
+   multi-endpoint aggregation with bounded mixer, default-output last resort,
+   correct COM/thread ownership, format conversion, bounded queue, and error
+   propagation.
 4. **Playback/latency:** protocol validation, AudioTrack failure handling,
    instrumentation, buffer modes, hardware measurements.
 5. **Release engineering:** explicit manifest, reproducible portable staging,
@@ -473,8 +482,9 @@ Architecture tradeoff: selecting ADB forward is a moderate role reversal rather
 than the smallest patch. It is preferred because it removes the application
 listener completely while retaining a bidirectional, diagnosable stream and the
 existing native PCM pipeline. Global exclude-tree capture is preferred because
-it is endpoint-independent; default endpoint loopback remains the compatibility
-layer where Windows rejects that feature.
+it is endpoint-independent; the bounded multi-endpoint mixer is the compatibility
+layer where Windows rejects that feature, with default endpoint loopback as the
+last resort.
 
 ## 12. Reviewer decisions requested
 
@@ -486,9 +496,9 @@ Please approve or correct these points before major code changes:
 3. System Audio (All Apps) is the only product mode; source-process selection is
    out of scope. Excluding AudioShare's own tree is an implementation mechanism,
    not a user-facing filter.
-4. Global process loopback is feature-probed first. Ordinary default-endpoint
-   WASAPI loopback is the compatibility fallback, and a multi-endpoint legacy
-   fallback remains required for the strongest old-Windows interpretation.
+4. Global process loopback is feature-probed first. The bounded multi-endpoint
+   WASAPI mixer is the compatibility fallback, with ordinary default-endpoint
+   loopback as the last resort when no active endpoint can be opened.
 5. Raw 48 kHz stereo PCM16 remains the initial format.
 6. Latency is a measured acceptance result, not a pre-implementation guarantee.
 7. Implementation follows the six gated stages above and preserves honest

@@ -28,6 +28,8 @@ using AudioCaptureGetErrorCode = int (*)();
 using AudioCaptureGetErrorMessage = const char* (*)();
 using AudioCaptureGetCaptureMode = unsigned int (*)();
 using AudioCaptureGetGlobalHresult = long (*)();
+using AudioCaptureGetUint32 = unsigned int (*)();
+using AudioCaptureGetUint64 = unsigned long long (*)();
 
 HANDLE g_transportReady = nullptr;
 std::atomic<uint64_t> g_pcmBytes{0};
@@ -169,13 +171,15 @@ int main(int argc, char** argv) {
             requireSignal = true;
         } else if (std::strcmp(argv[index], "--expect-global") == 0) {
             expectedMode = 1;
-        } else if (std::strcmp(argv[index], "--expect-default") == 0) {
+        } else if (std::strcmp(argv[index], "--expect-multi") == 0) {
             expectedMode = 2;
+        } else if (std::strcmp(argv[index], "--expect-default") == 0) {
+            expectedMode = 3;
         } else {
             std::fprintf(stderr,
                 "Usage: system_capture_integration_test "
                 "[--require-pcm] [--require-signal] "
-                "[--expect-global|--expect-default]\n");
+                "[--expect-global|--expect-multi|--expect-default]\n");
             return 2;
         }
     }
@@ -227,10 +231,24 @@ int main(int argc, char** argv) {
         library, "AudioCapture_GetCaptureMode");
     const auto getGlobalHresult = LoadFunction<AudioCaptureGetGlobalHresult>(
         library, "AudioCapture_GetGlobalLoopbackHresult");
+    const auto getActiveEndpointCount = LoadFunction<AudioCaptureGetUint32>(
+        library, "AudioCapture_GetActiveEndpointCount");
+    const auto getEndpointDroppedFrames = LoadFunction<AudioCaptureGetUint64>(
+        library, "AudioCapture_GetEndpointDroppedFrames");
+    const auto getEndpointUnderrunFrames = LoadFunction<AudioCaptureGetUint64>(
+        library, "AudioCapture_GetEndpointUnderrunFrames");
+    const auto getEndpointDiscontinuities = LoadFunction<AudioCaptureGetUint64>(
+        library, "AudioCapture_GetEndpointDiscontinuities");
+    const auto getEndpointRebuildCount = LoadFunction<AudioCaptureGetUint32>(
+        library, "AudioCapture_GetEndpointRebuildCount");
     if (initialize == nullptr || connect == nullptr || start == nullptr ||
         stop == nullptr || cleanup == nullptr || getErrorCode == nullptr ||
         getErrorMessage == nullptr || getCaptureMode == nullptr ||
-        getGlobalHresult == nullptr) {
+        getGlobalHresult == nullptr || getActiveEndpointCount == nullptr ||
+        getEndpointDroppedFrames == nullptr ||
+        getEndpointUnderrunFrames == nullptr ||
+        getEndpointDiscontinuities == nullptr ||
+        getEndpointRebuildCount == nullptr) {
         std::fprintf(stderr, "The DLL does not expose the expected Windows API\n");
         return 1;
     }
@@ -261,6 +279,15 @@ int main(int argc, char** argv) {
             std::printf("pcm_bytes=%llu nonzero_pcm_bytes=%llu\n",
                 static_cast<unsigned long long>(pcmBytes),
                 static_cast<unsigned long long>(nonZeroPcmBytes));
+            std::printf(
+                "active_endpoint_count=%u endpoint_dropped_frames=%llu "
+                "endpoint_underrun_frames=%llu endpoint_discontinuities=%llu "
+                "endpoint_rebuilds=%u\n",
+                getActiveEndpointCount(),
+                getEndpointDroppedFrames(),
+                getEndpointUnderrunFrames(),
+                getEndpointDiscontinuities(),
+                getEndpointRebuildCount());
             if ((expectedMode == 0 || mode == expectedMode) &&
                 (!requirePcm || pcmBytes > 0) &&
                 (!requireSignal || nonZeroPcmBytes > 0)) {

@@ -38,14 +38,17 @@ typedef struct AUDIOCLIENT_ACTIVATION_PARAMS {
 #endif
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <memory>
 #include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "wire_protocol.h"
@@ -61,11 +64,20 @@ constexpr uint32_t kSampleRate = 48000;
 constexpr uint16_t kChannels = 2;
 constexpr uint16_t kBitsPerSample = 16;
 constexpr DWORD kActivationTimeoutMilliseconds = 5000;
+constexpr DWORD kMixerPeriodMilliseconds = 10;
+constexpr size_t kMixerFrames =
+    kSampleRate * kMixerPeriodMilliseconds / 1000;
+constexpr size_t kMixerSamples = kMixerFrames * kChannels;
+constexpr size_t kMaxEndpointQueueFrames = kSampleRate / 10;
+constexpr size_t kEndpointBufferSamples =
+    kMaxEndpointQueueFrames * kChannels;
+constexpr size_t kMaxMultiEndpointCount = MAXIMUM_WAIT_OBJECTS - 3;
 
 enum class CaptureMode : uint32_t {
     kNone = 0,
     kGlobalProcessLoopback = 1,
-    kDefaultEndpointLoopback = 2,
+    kMultiEndpointLoopback = 2,
+    kDefaultEndpointLoopback = 3,
 };
 
 using ConnectCallback = void (*)(const char* status);
@@ -82,6 +94,11 @@ std::atomic<uint32_t> g_androidQueueDepth{0};
 std::atomic<uint32_t> g_androidBufferFrames{0};
 std::atomic<uint32_t> g_captureMode{static_cast<uint32_t>(CaptureMode::kNone)};
 std::atomic<long> g_globalLoopbackHresult{S_OK};
+std::atomic<uint32_t> g_activeEndpointCount{0};
+std::atomic<uint64_t> g_endpointDroppedFrames{0};
+std::atomic<uint64_t> g_endpointUnderrunFrames{0};
+std::atomic<uint64_t> g_endpointDiscontinuities{0};
+std::atomic<uint32_t> g_endpointRebuildCount{0};
 std::atomic<SOCKET> g_transportSocket{INVALID_SOCKET};
 
 HANDLE g_transportThread = nullptr;
@@ -230,7 +247,8 @@ bool ReapThread(HANDLE* thread, DWORD timeoutMilliseconds) {
     return true;
 }
 
-#if !defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT)
+#if !defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT) && \
+    !defined(AUDIOSHARE_FORCE_MULTI_ENDPOINT)
 class ActivationCompletionHandler final
     : public IActivateAudioInterfaceCompletionHandler {
 public:
@@ -388,6 +406,446 @@ HRESULT InitializeCanonicalLoopback(IAudioClient* audioClient,
         AUDCLNT_SHAREMODE_SHARED, streamFlags, 0, 0, format, nullptr);
 }
 
+#if !defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT)
+struct EndpointCapture {
+    IAudioClient* audioClient = nullptr;
+    IAudioCaptureClient* captureClient = nullptr;
+    HANDLE captureEvent = nullptr;
+    bool audioStarted = false;
+    bool hasSeenPacket = false;
+    // A fixed-capacity ring keeps packet ingestion allocation-free after
+    // endpoint setup. The capture thread is the sole owner of these fields.
+    std::unique_ptr<int16_t[]> sampleBuffer;
+    size_t readSample = 0;
+    size_t sampleCount = 0;
+};
+
+void CloseEndpoint(EndpointCapture* endpoint) {
+    if (endpoint == nullptr) return;
+    if (endpoint->audioStarted && endpoint->audioClient != nullptr) {
+        endpoint->audioClient->Stop();
+    }
+    if (endpoint->captureClient != nullptr) {
+        endpoint->captureClient->Release();
+        endpoint->captureClient = nullptr;
+    }
+    if (endpoint->audioClient != nullptr) {
+        endpoint->audioClient->Release();
+        endpoint->audioClient = nullptr;
+    }
+    if (endpoint->captureEvent != nullptr) {
+        CloseHandle(endpoint->captureEvent);
+        endpoint->captureEvent = nullptr;
+    }
+    endpoint->audioStarted = false;
+    endpoint->sampleBuffer.reset();
+    endpoint->readSample = 0;
+    endpoint->sampleCount = 0;
+}
+
+void CloseEndpoints(std::vector<EndpointCapture>* endpoints) {
+    if (endpoints == nullptr) return;
+    for (auto& endpoint : *endpoints) CloseEndpoint(&endpoint);
+    endpoints->clear();
+    g_activeEndpointCount.store(0);
+}
+
+HRESULT InitializeEndpoint(IMMDevice* device, const WAVEFORMATEX* format,
+                           EndpointCapture* endpoint) {
+    if (device == nullptr || format == nullptr || endpoint == nullptr) {
+        return E_POINTER;
+    }
+
+    endpoint->sampleBuffer.reset(
+        new (std::nothrow) int16_t[kEndpointBufferSamples]);
+    if (endpoint->sampleBuffer == nullptr) return E_OUTOFMEMORY;
+
+    HRESULT result = device->Activate(
+        __uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+        reinterpret_cast<void**>(&endpoint->audioClient));
+    if (SUCCEEDED(result)) {
+        result = InitializeCanonicalLoopback(endpoint->audioClient, format);
+    }
+    if (SUCCEEDED(result)) {
+        endpoint->captureEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        if (endpoint->captureEvent == nullptr) {
+            result = HRESULT_FROM_WIN32(GetLastError());
+        }
+    }
+    if (SUCCEEDED(result)) {
+        result = endpoint->audioClient->SetEventHandle(endpoint->captureEvent);
+    }
+    if (SUCCEEDED(result)) {
+        result = endpoint->audioClient->GetService(
+            __uuidof(IAudioCaptureClient),
+            reinterpret_cast<void**>(&endpoint->captureClient));
+    }
+    if (SUCCEEDED(result)) result = endpoint->audioClient->Start();
+    if (SUCCEEDED(result)) {
+        endpoint->audioStarted = true;
+        return S_OK;
+    }
+
+    CloseEndpoint(endpoint);
+    return result;
+}
+
+HRESULT EnumerateActiveEndpoints(IMMDeviceEnumerator* enumerator,
+                                 const WAVEFORMATEX* format,
+                                 std::vector<EndpointCapture>* endpoints) {
+    if (enumerator == nullptr || format == nullptr || endpoints == nullptr) {
+        return E_POINTER;
+    }
+    if (!endpoints->empty()) CloseEndpoints(endpoints);
+
+    IMMDeviceCollection* collection = nullptr;
+    HRESULT result = enumerator->EnumAudioEndpoints(
+        eRender, DEVICE_STATE_ACTIVE, &collection);
+    if (FAILED(result)) return result;
+
+    UINT count = 0;
+    result = collection->GetCount(&count);
+    HRESULT lastEndpointResult = HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+    if (FAILED(result)) {
+        collection->Release();
+        return result;
+    }
+
+    endpoints->reserve(
+        count < kMaxMultiEndpointCount ? count : kMaxMultiEndpointCount);
+    const UINT usableCount = count < kMaxMultiEndpointCount
+        ? count
+        : static_cast<UINT>(kMaxMultiEndpointCount);
+    for (UINT index = 0; index < usableCount; ++index) {
+        IMMDevice* device = nullptr;
+        const HRESULT itemResult = collection->Item(index, &device);
+        if (SUCCEEDED(itemResult)) {
+            EndpointCapture endpoint;
+            lastEndpointResult = InitializeEndpoint(
+                device, format, &endpoint);
+            if (SUCCEEDED(lastEndpointResult)) {
+                endpoints->push_back(std::move(endpoint));
+            }
+        } else {
+            lastEndpointResult = itemResult;
+        }
+        if (device != nullptr) device->Release();
+    }
+    collection->Release();
+
+    if (endpoints->empty()) return lastEndpointResult;
+    g_activeEndpointCount.store(static_cast<uint32_t>(endpoints->size()));
+    return S_OK;
+}
+
+HRESULT EnumerateActiveEndpointsWithRetry(
+    IMMDeviceEnumerator* enumerator, const WAVEFORMATEX* format,
+    std::vector<EndpointCapture>* endpoints) {
+    HRESULT result = E_FAIL;
+    constexpr int kAttempts = 4;
+    for (int attempt = 0; attempt < kAttempts && g_captureRunning.load(); ++attempt) {
+        result = EnumerateActiveEndpoints(enumerator, format, endpoints);
+        if (SUCCEEDED(result)) return S_OK;
+        if (attempt + 1 < kAttempts && g_stopEvent != nullptr) {
+            // USB/Bluetooth/default-device transitions can briefly expose no
+            // active endpoint. Give the audio service a bounded recovery window
+            // before abandoning this mode for the default-output fallback.
+            WaitForSingleObject(g_stopEvent, 250);
+        }
+    }
+    return result;
+}
+
+class EndpointNotificationClient final : public IMMNotificationClient {
+public:
+    explicit EndpointNotificationClient(HANDLE changeEvent)
+        : changeEvent_(changeEvent) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
+        if (object == nullptr) return E_POINTER;
+        *object = nullptr;
+        if (IsEqualIID(iid, IID_IUnknown) ||
+            IsEqualIID(iid, __uuidof(IMMNotificationClient))) {
+            *object = static_cast<IMMNotificationClient*>(this);
+            AddRef();
+            return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() override {
+        return references_.fetch_add(1) + 1;
+    }
+
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = references_.fetch_sub(1) - 1;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override {
+        SignalChange();
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override {
+        SignalChange();
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override {
+        SignalChange();
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(
+        EDataFlow flow, ERole, LPCWSTR) override {
+        if (flow == eRender) SignalChange();
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(
+        LPCWSTR, const PROPERTYKEY) override {
+        // Volume/mute/name property churn does not require tearing down every
+        // loopback client. Device add/remove/state/default notifications and a
+        // failed packet read cover the changes that affect endpoint ownership.
+        return S_OK;
+    }
+
+private:
+    ~EndpointNotificationClient() = default;
+
+    void SignalChange() const {
+        if (changeEvent_ != nullptr) SetEvent(changeEvent_);
+    }
+
+    std::atomic<ULONG> references_{1};
+    HANDLE changeEvent_ = nullptr;
+};
+
+void AppendEndpointPacket(EndpointCapture* endpoint, const BYTE* data,
+                          UINT32 frames, bool silent) {
+    if (endpoint == nullptr || endpoint->sampleBuffer == nullptr ||
+        frames == 0) return;
+    endpoint->hasSeenPacket = true;
+
+    size_t firstFrame = 0;
+    if (frames > kMaxEndpointQueueFrames) {
+        firstFrame = frames - kMaxEndpointQueueFrames;
+        g_endpointDroppedFrames.fetch_add(firstFrame);
+    }
+    const size_t retainedFrames = static_cast<size_t>(frames) - firstFrame;
+    const size_t queuedFrames = endpoint->sampleCount / kChannels;
+    if (queuedFrames + retainedFrames > kMaxEndpointQueueFrames) {
+        const size_t framesToDrop =
+            queuedFrames + retainedFrames - kMaxEndpointQueueFrames;
+        endpoint->readSample =
+            (endpoint->readSample + framesToDrop * kChannels) %
+            kEndpointBufferSamples;
+        endpoint->sampleCount -= framesToDrop * kChannels;
+        g_endpointDroppedFrames.fetch_add(framesToDrop);
+    }
+
+    const auto* input = reinterpret_cast<const int16_t*>(data);
+    for (size_t frame = firstFrame; frame < frames; ++frame) {
+        for (size_t channel = 0; channel < kChannels; ++channel) {
+            const size_t writeSample =
+                (endpoint->readSample + endpoint->sampleCount) %
+                kEndpointBufferSamples;
+            endpoint->sampleBuffer[writeSample] =
+                silent || input == nullptr
+                    ? 0
+                    : input[frame * kChannels + channel];
+            ++endpoint->sampleCount;
+        }
+    }
+}
+
+HRESULT DrainEndpoint(EndpointCapture* endpoint) {
+    if (endpoint == nullptr || endpoint->captureClient == nullptr) {
+        return E_POINTER;
+    }
+
+    UINT32 packetFrames = 0;
+    HRESULT result = endpoint->captureClient->GetNextPacketSize(&packetFrames);
+    while (SUCCEEDED(result) && packetFrames > 0 && g_captureRunning.load()) {
+        BYTE* data = nullptr;
+        UINT32 frames = 0;
+        DWORD flags = 0;
+        result = endpoint->captureClient->GetBuffer(
+            &data, &frames, &flags, nullptr, nullptr);
+        if (FAILED(result)) break;
+        if ((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0) {
+            g_endpointDiscontinuities.fetch_add(1);
+        }
+        AppendEndpointPacket(
+            endpoint, data, frames,
+            (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0);
+        const HRESULT releaseResult = endpoint->captureClient->ReleaseBuffer(frames);
+        if (FAILED(releaseResult)) return releaseResult;
+        result = endpoint->captureClient->GetNextPacketSize(&packetFrames);
+    }
+    return result;
+}
+
+void MixEndpointPeriod(std::vector<EndpointCapture>* endpoints) {
+    std::array<int32_t, kMixerSamples> accumulator{};
+    std::array<int16_t, kMixerSamples> mixed{};
+
+    for (auto& endpoint : *endpoints) {
+        if (endpoint.sampleBuffer == nullptr) continue;
+        const size_t availableFrames = endpoint.sampleCount / kChannels;
+        const size_t framesToMix = availableFrames < kMixerFrames
+            ? availableFrames
+            : kMixerFrames;
+        if (endpoint.hasSeenPacket && framesToMix < kMixerFrames) {
+            g_endpointUnderrunFrames.fetch_add(kMixerFrames - framesToMix);
+        }
+        for (size_t frame = 0; frame < framesToMix; ++frame) {
+            for (size_t channel = 0; channel < kChannels; ++channel) {
+                accumulator[frame * kChannels + channel] +=
+                    endpoint.sampleBuffer[endpoint.readSample];
+                endpoint.readSample =
+                    (endpoint.readSample + 1) % kEndpointBufferSamples;
+                --endpoint.sampleCount;
+            }
+        }
+    }
+
+    for (size_t sample = 0; sample < mixed.size(); ++sample) {
+        int32_t value = accumulator[sample];
+        if (value > INT16_MAX) value = INT16_MAX;
+        if (value < INT16_MIN) value = INT16_MIN;
+        mixed[sample] = static_cast<int16_t>(value);
+    }
+    EnqueuePcm(
+        reinterpret_cast<const uint8_t*>(mixed.data()),
+        mixed.size() * sizeof(mixed[0]));
+}
+
+void DrainAllEndpoints(std::vector<EndpointCapture>* endpoints,
+                       HANDLE changeEvent) {
+    for (auto& endpoint : *endpoints) {
+        if (FAILED(DrainEndpoint(&endpoint))) {
+            // Device invalidation can race the periodic tick even before the
+            // notification callback arrives. Defer teardown/rebuild to the
+            // capture thread's normal change-event branch.
+            if (changeEvent != nullptr) SetEvent(changeEvent);
+            return;
+        }
+    }
+}
+
+HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
+    IMMDeviceEnumerator* enumerator = nullptr;
+    EndpointNotificationClient* notification = nullptr;
+    HANDLE changeEvent = nullptr;
+    HANDLE mixerTimer = nullptr;
+    bool notificationRegistered = false;
+    std::vector<EndpointCapture> endpoints;
+
+    HRESULT result = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+        __uuidof(IMMDeviceEnumerator),
+        reinterpret_cast<void**>(&enumerator));
+    if (FAILED(result)) return result;
+
+    changeEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    mixerTimer = CreateWaitableTimer(nullptr, FALSE, nullptr);
+    if (changeEvent == nullptr || mixerTimer == nullptr) {
+        result = HRESULT_FROM_WIN32(GetLastError());
+    }
+    if (SUCCEEDED(result)) {
+        notification = new (std::nothrow) EndpointNotificationClient(changeEvent);
+        if (notification == nullptr) result = E_OUTOFMEMORY;
+    }
+    if (SUCCEEDED(result)) {
+        result = enumerator->RegisterEndpointNotificationCallback(notification);
+        notificationRegistered = SUCCEEDED(result);
+    }
+    if (SUCCEEDED(result)) {
+        LARGE_INTEGER firstTick{};
+        firstTick.QuadPart =
+            -static_cast<LONGLONG>(kMixerPeriodMilliseconds) * 10000;
+        if (!SetWaitableTimer(
+                mixerTimer, &firstTick,
+                static_cast<LONG>(kMixerPeriodMilliseconds),
+                nullptr, nullptr, FALSE)) {
+            result = HRESULT_FROM_WIN32(GetLastError());
+        }
+    }
+    if (SUCCEEDED(result)) {
+        result = EnumerateActiveEndpointsWithRetry(
+            enumerator, format, &endpoints);
+    }
+    if (SUCCEEDED(result)) {
+        g_captureMode.store(
+            static_cast<uint32_t>(CaptureMode::kMultiEndpointLoopback));
+    }
+
+    while (SUCCEEDED(result) && g_captureRunning.load()) {
+        std::vector<HANDLE> waitHandles;
+        waitHandles.reserve(endpoints.size() + 3);
+        waitHandles.push_back(g_stopEvent);
+        waitHandles.push_back(changeEvent);
+        for (const auto& endpoint : endpoints) {
+            waitHandles.push_back(endpoint.captureEvent);
+        }
+        const size_t timerIndex = waitHandles.size();
+        waitHandles.push_back(mixerTimer);
+
+        const DWORD waitResult = WaitForMultipleObjects(
+            static_cast<DWORD>(waitHandles.size()), waitHandles.data(),
+            FALSE, 2000);
+        if (waitResult == WAIT_OBJECT_0) {
+            result = S_OK;
+            break;
+        }
+        if (waitResult == WAIT_TIMEOUT) continue;
+        if (waitResult == WAIT_FAILED) {
+            result = HRESULT_FROM_WIN32(GetLastError());
+            break;
+        }
+
+        const size_t signaledIndex = waitResult - WAIT_OBJECT_0;
+        if (signaledIndex == 1) {
+            CloseEndpoints(&endpoints);
+            g_endpointRebuildCount.fetch_add(1);
+            result = EnumerateActiveEndpointsWithRetry(
+                enumerator, format, &endpoints);
+        } else if (signaledIndex >= 2 && signaledIndex < timerIndex) {
+            result = DrainEndpoint(&endpoints[signaledIndex - 2]);
+            if (FAILED(result)) {
+                SetEvent(changeEvent);
+                result = S_OK;
+            }
+        } else if (signaledIndex == timerIndex) {
+            // Event handles are the normal wake-up mechanism. Polling once per
+            // mixer period is intentional as a compatibility guard for older
+            // loopback implementations that initialize successfully but do not
+            // signal an event until a render client advances the stream.
+            DrainAllEndpoints(&endpoints, changeEvent);
+            MixEndpointPeriod(&endpoints);
+        } else {
+            result = E_UNEXPECTED;
+        }
+    }
+
+    CloseEndpoints(&endpoints);
+    if (notificationRegistered) {
+        enumerator->UnregisterEndpointNotificationCallback(notification);
+    }
+    if (notification != nullptr) notification->Release();
+    if (mixerTimer != nullptr) {
+        CancelWaitableTimer(mixerTimer);
+        CloseHandle(mixerTimer);
+    }
+    if (changeEvent != nullptr) CloseHandle(changeEvent);
+    enumerator->Release();
+    return result;
+}
+#endif
+
 SOCKET ConnectLoopback(int port) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
     while (g_transportRunning.load() && std::chrono::steady_clock::now() < deadline) {
@@ -543,6 +1001,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
     bool audioStarted = false;
     DWORD exitCode = 1;
     HRESULT globalResult = E_NOTIMPL;
+    HRESULT multiEndpointResult = E_NOTIMPL;
 
     do {
         WAVEFORMATEX format{};
@@ -551,7 +1010,8 @@ DWORD WINAPI CaptureThread(LPVOID) {
         // Preferred mode: Windows' endpoint-independent process loopback,
         // excluding this host process tree. Activation is the feature probe;
         // version strings are intentionally not used as a gate.
-#if defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT)
+#if defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT) || \
+    defined(AUDIOSHARE_FORCE_MULTI_ENDPOINT)
         globalResult = E_NOTIMPL;
 #else
         globalResult = ActivateGlobalProcessLoopback(&audioClient);
@@ -573,9 +1033,21 @@ DWORD WINAPI CaptureThread(LPVOID) {
                 audioClient = nullptr;
             }
 
-            // Compatibility mode for Windows builds/drivers without global
-            // process loopback. This still captures every normal stream routed
-            // through the current default render endpoint.
+#if !defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT)
+            // Compatibility mode for Windows versions without global process
+            // loopback: capture each active render endpoint and mix them on a
+            // bounded 10 ms host clock. The routine owns device-change rebuilds
+            // and returns only on stop or if the whole mode becomes unusable.
+            multiEndpointResult = RunMultiEndpointCapture(&format);
+            if (SUCCEEDED(multiEndpointResult)) {
+                exitCode = 0;
+                break;
+            }
+            g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
+#endif
+
+            // Last-resort compatibility mode: this captures every normal stream
+            // routed through the current default render endpoint.
             result = CoCreateInstance(
                 __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
                 __uuidof(IMMDeviceEnumerator),
@@ -608,6 +1080,12 @@ DWORD WINAPI CaptureThread(LPVOID) {
                 _snprintf_s(globalCode, sizeof(globalCode), _TRUNCATE, "%08lX",
                     static_cast<unsigned long>(globalResult));
                 message += globalCode;
+                message += "); multi-endpoint loopback was unavailable (HRESULT 0x";
+                char multiEndpointCode[16]{};
+                _snprintf_s(
+                    multiEndpointCode, sizeof(multiEndpointCode), _TRUNCATE,
+                    "%08lX", static_cast<unsigned long>(multiEndpointResult));
+                message += multiEndpointCode;
                 message += ")";
                 SetError(2204, message);
                 break;
@@ -667,6 +1145,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
     if (comInitialized) CoUninitialize();
     g_captureRunning.store(false);
     g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
+    g_activeEndpointCount.store(0);
     return exitCode;
 }
 
@@ -708,6 +1187,11 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
     g_androidBufferFrames.store(0);
     g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
     g_globalLoopbackHresult.store(S_OK);
+    g_activeEndpointCount.store(0);
+    g_endpointDroppedFrames.store(0);
+    g_endpointUnderrunFrames.store(0);
+    g_endpointDiscontinuities.store(0);
+    g_endpointRebuildCount.store(0);
     g_connected.store(false);
     if (g_stopEvent != nullptr) ResetEvent(g_stopEvent);
     {
@@ -753,6 +1237,7 @@ extern "C" __declspec(dllexport) int AudioCapture_Start() {
 extern "C" __declspec(dllexport) void AudioCapture_Stop() {
     g_captureRunning.store(false);
     g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
+    g_activeEndpointCount.store(0);
     g_transportRunning.store(false);
     g_connected.store(false);
     if (g_stopEvent != nullptr) SetEvent(g_stopEvent);
@@ -821,4 +1306,24 @@ extern "C" __declspec(dllexport) unsigned int AudioCapture_GetCaptureMode() {
 
 extern "C" __declspec(dllexport) long AudioCapture_GetGlobalLoopbackHresult() {
     return g_globalLoopbackHresult.load();
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetActiveEndpointCount() {
+    return static_cast<unsigned int>(g_activeEndpointCount.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointDroppedFrames() {
+    return static_cast<unsigned long long>(g_endpointDroppedFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointUnderrunFrames() {
+    return static_cast<unsigned long long>(g_endpointUnderrunFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointDiscontinuities() {
+    return static_cast<unsigned long long>(g_endpointDiscontinuities.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetEndpointRebuildCount() {
+    return static_cast<unsigned int>(g_endpointRebuildCount.load());
 }

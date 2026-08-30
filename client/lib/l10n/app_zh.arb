@@ -13,7 +13,13 @@
   "ignoredAdbDevice": "已忽略：请通过 USB 连接此设备。",
   "streamingAllSystemAudio": "正在传输全部 Windows 系统音频",
   "streamingGlobalSystemAudio": "正在传输全部 Windows 音频（全局模式）",
-  "streamingDefaultOutputAudio": "正在传输 Windows 默认输出（兼容模式）",
+  "streamingMultiOutputAudio": "正在传输所有活动的 Windows 输出（{count} 个）",
+  "@streamingMultiOutputAudio": {
+    "placeholders": {
+      "count": {"type": "String"}
+    }
+  },
+  "streamingDefaultOutputAudio": "正在传输 Windows 默认输出（最终兼容回退）",
   "phaseCheckingAdb": "正在检查 USB 和 ADB",
   "phaseCheckingCompanion": "正在检查 Android 配套应用",
   "phaseCreatingForward": "正在创建 USB 传输",

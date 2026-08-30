@@ -45,16 +45,19 @@ EDR, UAC, or organizational security controls.
 
 ## 5. Windows source sound
 
-- This fork captures the default Windows render endpoint, not one process.
-- Confirm the application and Windows volume mixer route sound to that endpoint.
-- Audio that bypasses the Windows audio engine or uses another physical endpoint
-  is not present in this loopback stream.
+- This fork captures system audio, not one selected process. Global mode is
+  endpoint-independent; the compatibility mixer captures every usable active
+  render endpoint. The final fallback is explicitly limited to the default
+  Windows render endpoint.
+- Confirm the application uses the Windows shared audio engine. Hardware paths
+  that bypass that engine are outside WASAPI loopback coverage.
 
 ## 6. Windows capture
 
 - Confirm the Windows Audio service and default output device are working.
-- Endpoint changes during a session are not yet recovered automatically; reconnect
-  AudioShare after changing the default output device.
+- In global mode, changing the default output does not require recovery. In the
+  multi-endpoint compatibility mode, endpoint notifications trigger a bounded
+  rebuild; the final default-output fallback may require reconnecting AudioShare.
 - Native errors include a numeric code and the failing WASAPI/transport stage.
 
 ## 7. Full stream

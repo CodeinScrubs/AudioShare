@@ -1,10 +1,11 @@
 # Phase B POC Results
 
-Status: partial. Windows global capture now has a hardware-independent native
-integration result; physical USB/Android transport and phone playback remain
-blocked because no authorized Android device is attached.
+Status: partial. Windows global, multi-endpoint, and default fallback capture now
+have hardware-independent native integration results; physical USB/Android
+transport and phone playback remain blocked because no authorized Android device
+is attached.
 
-Recorded: 2026-08-29 (Asia/Tehran)
+Recorded: 2026-08-29–30 (Asia/Tehran)
 
 This report distinguishes command-surface/static evidence from an actual
 end-to-end proof. It must not be used to claim that USB audio or firewall
@@ -94,8 +95,11 @@ The requested scope is **System Audio (All Apps)**. The production hierarchy is:
 
 1. feature-probe endpoint-independent Application Process Loopback in
    `EXCLUDE_TARGET_PROCESS_TREE` mode, excluding the AudioShare host and children;
-2. if activation or 48 kHz initialization is unsupported, use event-driven
-   shared-mode loopback of the default console render endpoint.
+2. if activation or 48 kHz initialization is unsupported, enumerate active
+   render endpoints and mix their event-driven shared-mode loopbacks on a bounded
+   10 ms host clock;
+3. if no active endpoint can be opened, use event-driven loopback of the default
+   console render endpoint as a last resort.
 
 The implementation does not select `idplayer.exe` or any other source process.
 It owns activation and all WASAPI interfaces on the capture thread, asks the
@@ -109,6 +113,7 @@ reported:
 ```text
 capture_mode=1 global_hresult=0x00000000
 pcm_bytes=785280 nonzero_pcm_bytes=135161
+active_endpoint_count=0 endpoint_dropped_frames=0 endpoint_underrun_frames=0 endpoint_discontinuities=0 endpoint_rebuilds=0
 EXIT=0
 ```
 
@@ -122,18 +127,35 @@ simultaneous multi-application coverage, cross-endpoint coverage, phone playback
 or end-to-end latency.
 
 A second strict build defined the test-only
-`AUDIOSHARE_FORCE_DEFAULT_ENDPOINT` compile flag and required compatibility mode
-plus non-zero signal:
+`AUDIOSHARE_FORCE_MULTI_ENDPOINT` compile flag and required the multi-endpoint
+compatibility mode plus non-zero signal:
 
 ```text
 capture_mode=2 global_hresult=0x80004001
-pcm_bytes=787200 nonzero_pcm_bytes=135498
+pcm_bytes=503040 nonzero_pcm_bytes=86336
+active_endpoint_count=1 endpoint_dropped_frames=67200 endpoint_underrun_frames=0 endpoint_discontinuities=1 endpoint_rebuilds=0
+MULTI_EXIT=0
+```
+
+A third strict build defined the test-only
+`AUDIOSHARE_FORCE_DEFAULT_ENDPOINT` compile flag and required the final default
+endpoint mode plus non-zero signal:
+
+```text
+capture_mode=3 global_hresult=0x80004001
+pcm_bytes=789120 nonzero_pcm_bytes=135804
+active_endpoint_count=0 endpoint_dropped_frames=0 endpoint_underrun_frames=0 endpoint_discontinuities=0 endpoint_rebuilds=0
 DEFAULT_EXIT=0
 ```
 
-This verifies the ordinary default-endpoint branch without weakening production
-feature detection. `0x80004001` is the intentionally injected `E_NOTIMPL` probe
-result. It is not evidence from an actually unsupported/old Windows build.
+These verify both compatibility branches without weakening production feature
+detection. `0x80004001` is the intentionally injected `E_NOTIMPL` probe result;
+it is not evidence from an actually unsupported/old Windows build. The multi
+branch also exercises active-endpoint enumeration, event-driven packet drains,
+bounded mixing, and clean teardown on this host.
+This host exposed one active render endpoint; its reported dropped frames are the
+bounded live-edge trim while the loopback client caught up, not a claim about
+multi-device coverage or steady-state loss.
 
 Strict portable GCC 16.2 compilation passed under `-Wall -Wextra -Werror` for
 both the DLL and integration harness. The installed MSYS2 GCC 16.1 front end was
@@ -180,15 +202,21 @@ Implemented and locally checked without claiming hardware behavior:
   connects only to `127.0.0.1:<allocated-forward-port>`;
 - global process-loopback capture is feature-probed, excludes the host process
   tree, and exposes active/fallback mode diagnostics to the UI;
-- a native fake-companion integration run activated global mode and delivered
-  non-zero framed PCM through the actual DLL transport;
+- the compatibility hierarchy enumerates active render endpoints, mixes bounded
+  10 ms periods, observes endpoint notifications, and exposes endpoint
+  count/drop/underrun/discontinuity/rebuild diagnostics;
+- native fake-companion integration runs activated global, multi-endpoint, and
+  default-endpoint modes and delivered non-zero framed PCM through the actual
+  DLL transport;
 - a 256-bit per-session token authenticates a versioned framed handshake;
 - native transport and WASAPI capture run on separate bounded-lifecycle threads;
 - native wire-format golden/bounds/token tests compile and pass;
 - READY format values and periodic Android playback statistics are now validated
   before being exposed as FFI diagnostic counters;
-- the DLL compiles and links under `-Wall -Wextra -Werror` and exports only the
-  outbound connection API;
+- the DLL compiles and links under `-Wall -Wextra -Werror`; its transport path
+  remains outbound-only and contains no listening/bind API;
+- the Windows CMake wrapper conditionally applies MSVC or GNU warning/encoding
+  flags, and its native target configures and builds with portable MinGW;
 - Dart ADB commands have structured results, bounded output and timeouts,
   secret redaction, exact resource cleanup, and isolated child environments;
 - supervised `adb track-devices -l` triggers refreshes, with a 15-second

@@ -9,6 +9,10 @@ void main() {
     );
     expect(
       WindowsCaptureMode.fromNative(2),
+      WindowsCaptureMode.multiEndpoint,
+    );
+    expect(
+      WindowsCaptureMode.fromNative(3),
       WindowsCaptureMode.defaultEndpoint,
     );
     expect(WindowsCaptureMode.fromNative(0), WindowsCaptureMode.inactive);

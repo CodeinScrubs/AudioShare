@@ -96,6 +96,7 @@ class DataSource extends ChangeNotifier {
   int _sessionGeneration = 0;
   AdbForwardSession? _forwardSession;
   WindowsCaptureMode _lastNotifiedCaptureMode = WindowsCaptureMode.inactive;
+  int _lastNotifiedActiveEndpointCount = 0;
 
   List<DeviceModel> get devices => _devices;
   int get deviceState => _deviceState;
@@ -107,6 +108,11 @@ class DataSource extends ChangeNotifier {
   int get androidBufferFrames => _audioCapture.androidBufferFrames;
   WindowsCaptureMode get captureMode => _audioCapture.captureMode;
   int get globalLoopbackHresult => _audioCapture.globalLoopbackHresult;
+  int get activeEndpointCount => _audioCapture.activeEndpointCount;
+  int get endpointDroppedFrames => _audioCapture.endpointDroppedFrames;
+  int get endpointUnderrunFrames => _audioCapture.endpointUnderrunFrames;
+  int get endpointDiscontinuities => _audioCapture.endpointDiscontinuities;
+  int get endpointRebuildCount => _audioCapture.endpointRebuildCount;
 
   bool isCompanionMissing(String deviceId) =>
       _missingCompanionDeviceIds.contains(deviceId);
@@ -230,8 +236,11 @@ class DataSource extends ChangeNotifier {
     final error = _audioCapture.pollLastError();
     if (error == null) {
       final mode = _audioCapture.captureMode;
-      if (mode != _lastNotifiedCaptureMode) {
+      final activeEndpointCount = _audioCapture.activeEndpointCount;
+      if (mode != _lastNotifiedCaptureMode ||
+          activeEndpointCount != _lastNotifiedActiveEndpointCount) {
         _lastNotifiedCaptureMode = mode;
+        _lastNotifiedActiveEndpointCount = activeEndpointCount;
         if (!_disposed) notifyListeners();
       }
       return;
@@ -394,6 +403,7 @@ class DataSource extends ChangeNotifier {
     _connectStateMap[deviceId] = 2;
     _phaseMap[deviceId] = ConnectionPhase.streaming;
     _lastNotifiedCaptureMode = _audioCapture.captureMode;
+    _lastNotifiedActiveEndpointCount = _audioCapture.activeEndpointCount;
     _lastAutoDeviceId = deviceId;
     notifyListeners();
   }
@@ -444,6 +454,7 @@ class DataSource extends ChangeNotifier {
     final forward = _forwardSession;
     _forwardSession = null;
     _lastNotifiedCaptureMode = WindowsCaptureMode.inactive;
+    _lastNotifiedActiveEndpointCount = 0;
 
     if (forward != null) {
       try {

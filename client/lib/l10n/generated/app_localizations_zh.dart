@@ -48,7 +48,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamingGlobalSystemAudio => '正在传输全部 Windows 音频（全局模式）';
 
   @override
-  String get streamingDefaultOutputAudio => '正在传输 Windows 默认输出（兼容模式）';
+  String streamingMultiOutputAudio(String count) {
+    return '正在传输所有活动的 Windows 输出（$count 个）';
+  }
+
+  @override
+  String get streamingDefaultOutputAudio => '正在传输 Windows 默认输出（最终兼容回退）';
 
   @override
   String get phaseCheckingAdb => '正在检查 USB 和 ADB';

@@ -274,6 +274,10 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
               _ when connectState == 2 => switch (_dataSource.captureMode) {
                   WindowsCaptureMode.globalSystem =>
                     l10n.streamingGlobalSystemAudio,
+                  WindowsCaptureMode.multiEndpoint =>
+                    l10n.streamingMultiOutputAudio(
+                      _dataSource.activeEndpointCount.toString(),
+                    ),
                   WindowsCaptureMode.defaultEndpoint =>
                     l10n.streamingDefaultOutputAudio,
                   WindowsCaptureMode.inactive => l10n.streamingAllSystemAudio,

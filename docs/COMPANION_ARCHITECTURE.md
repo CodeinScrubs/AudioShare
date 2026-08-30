@@ -26,8 +26,10 @@ and system audio starts without opening either UI or entering an IP address.
 all ordinary applications + Windows sounds
                          |
        global process loopback (preferred)
-                         |
-        default-endpoint loopback (fallback)
+                          |
+      active-endpoint loopback + bounded mixer
+                          |
+         default-endpoint loopback (last resort)
                          |
           validated format conversion to 48k stereo PCM16
                          |
@@ -115,7 +117,7 @@ The host retains the reliability design from `LOCKED_DOWN_WINDOWS_DESIGN.md`:
 - no `remove-all`, `kill-server`, wireless ADB workflow, or ambient-server
   disruption;
 - endpoint-independent global process loopback where Windows accepts it, with
-  event-driven default-endpoint loopback as the compatibility fallback;
+  event-driven active-endpoint aggregation and a default-endpoint last resort;
 - all COM/WASAPI and asynchronous activation lifetime on the capture thread;
 - canonical 48 kHz stereo PCM16 requested through Windows shared-mode engine
   conversion;
@@ -123,11 +125,13 @@ The host retains the reliability design from `LOCKED_DOWN_WINDOWS_DESIGN.md`:
 - explicit transport, capture, signal, and playback states.
 
 The global path excludes the host's own process tree and is not tied to a
-physical endpoint. The active mode and global feature-probe HRESULT are exposed
-through FFI diagnostics. On older/incompatible Windows, the current fallback
-follows the default console render endpoint. A multi-endpoint legacy aggregator,
-endpoint-change recovery, duplicate-stream handling, and independent-clock drift
-control are still planned and must be measured rather than claimed complete.
+physical endpoint. The active mode, endpoint count, queue drops, mixer underruns,
+discontinuities, and rebuild count are exposed through FFI diagnostics. On
+older/incompatible Windows, the compatibility mixer opens every usable active
+render endpoint and rebuilds on `IMMNotificationClient` events; only when no
+endpoint can be opened does it follow the default console render endpoint.
+Independent-clock drift correction and duplicate mirrored-output suppression are
+still measurement-driven follow-up work.
 
 ## Evidence gate
 

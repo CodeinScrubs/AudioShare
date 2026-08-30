@@ -49,11 +49,13 @@ typedef AudioCaptureGetInt32Dart = int Function();
 enum WindowsCaptureMode {
   inactive,
   globalSystem,
+  multiEndpoint,
   defaultEndpoint;
 
   static WindowsCaptureMode fromNative(int value) => switch (value) {
         1 => WindowsCaptureMode.globalSystem,
-        2 => WindowsCaptureMode.defaultEndpoint,
+        2 => WindowsCaptureMode.multiEndpoint,
+        3 => WindowsCaptureMode.defaultEndpoint,
         _ => WindowsCaptureMode.inactive,
       };
 }
@@ -100,6 +102,11 @@ class AudioCaptureService {
   AudioCaptureGetUint32Dart? _getAndroidBufferFrames;
   AudioCaptureGetUint32Dart? _getCaptureMode;
   AudioCaptureGetInt32Dart? _getGlobalLoopbackHresult;
+  AudioCaptureGetUint32Dart? _getActiveEndpointCount;
+  AudioCaptureGetDroppedChunksDart? _getEndpointDroppedFrames;
+  AudioCaptureGetDroppedChunksDart? _getEndpointUnderrunFrames;
+  AudioCaptureGetDroppedChunksDart? _getEndpointDiscontinuities;
+  AudioCaptureGetUint32Dart? _getEndpointRebuildCount;
 
   bool _initialized = false;
   String? _libraryLoadError;
@@ -171,6 +178,24 @@ class AudioCaptureService {
       _getGlobalLoopbackHresult = _lib!
           .lookupFunction<AudioCaptureGetInt32Native, AudioCaptureGetInt32Dart>(
               'AudioCapture_GetGlobalLoopbackHresult');
+      _getActiveEndpointCount = _lib!.lookupFunction<
+          AudioCaptureGetUint32Native,
+          AudioCaptureGetUint32Dart>('AudioCapture_GetActiveEndpointCount');
+      _getEndpointDroppedFrames = _lib!.lookupFunction<
+              AudioCaptureGetDroppedChunksNative,
+              AudioCaptureGetDroppedChunksDart>(
+          'AudioCapture_GetEndpointDroppedFrames');
+      _getEndpointUnderrunFrames = _lib!.lookupFunction<
+              AudioCaptureGetDroppedChunksNative,
+              AudioCaptureGetDroppedChunksDart>(
+          'AudioCapture_GetEndpointUnderrunFrames');
+      _getEndpointDiscontinuities = _lib!.lookupFunction<
+              AudioCaptureGetDroppedChunksNative,
+              AudioCaptureGetDroppedChunksDart>(
+          'AudioCapture_GetEndpointDiscontinuities');
+      _getEndpointRebuildCount = _lib!.lookupFunction<
+          AudioCaptureGetUint32Native,
+          AudioCaptureGetUint32Dart>('AudioCapture_GetEndpointRebuildCount');
     } catch (error) {
       _libraryLoadError = error.toString();
     }
@@ -215,6 +240,11 @@ class AudioCaptureService {
         _getCaptureMode?.call() ?? 0,
       );
   int get globalLoopbackHresult => _getGlobalLoopbackHresult?.call() ?? 0;
+  int get activeEndpointCount => _getActiveEndpointCount?.call() ?? 0;
+  int get endpointDroppedFrames => _getEndpointDroppedFrames?.call() ?? 0;
+  int get endpointUnderrunFrames => _getEndpointUnderrunFrames?.call() ?? 0;
+  int get endpointDiscontinuities => _getEndpointDiscontinuities?.call() ?? 0;
+  int get endpointRebuildCount => _getEndpointRebuildCount?.call() ?? 0;
 
   /// Start audio capture after the Android transport handshake completes.
   bool start() {

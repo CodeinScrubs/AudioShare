@@ -176,10 +176,16 @@ abstract class AppLocalizations {
   /// **'Streaming all Windows audio (global mode)'**
   String get streamingGlobalSystemAudio;
 
+  /// No description provided for @streamingMultiOutputAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Streaming all active Windows outputs ({count} endpoints)'**
+  String streamingMultiOutputAudio(String count);
+
   /// No description provided for @streamingDefaultOutputAudio.
   ///
   /// In en, this message translates to:
-  /// **'Streaming Windows default output (compatibility mode)'**
+  /// **'Streaming Windows default output (last-resort compatibility mode)'**
   String get streamingDefaultOutputAudio;
 
   /// No description provided for @phaseCheckingAdb.

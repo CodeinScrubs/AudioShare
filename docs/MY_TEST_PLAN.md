@@ -15,14 +15,17 @@ pass/fail evidence. A test is not passed merely because the app launches.
    confirm Android shows the app afterward.
 5. Connect and play a Windows system sound. Confirm it plays on the phone speaker.
 6. Record the capture label. On supported Windows it should say **global mode**;
-   on compatibility fallback it must explicitly say **default output**.
+   on older compatibility systems it should say **all active outputs** with the
+   endpoint count; **default output** means the last-resort branch.
 7. Play browser audio, then two applications simultaneously. Confirm both are
    audible.
 8. If Infinit is available, play idplayer content and confirm it is included
    without selecting a process.
 9. On global mode, route a second application to another active Windows output
-   endpoint and confirm both endpoints are captured. On compatibility mode,
-   record this as the known default-output-only limitation.
+   endpoint and confirm both endpoints are captured. Force the multi-endpoint
+   compatibility mode and repeat, recording endpoint count, drops, underruns,
+   discontinuities, and rebuild count. If the final default-output mode is
+   forced, record its explicit single-endpoint limitation.
 10. Turn Windows Wi-Fi off and repeat. No Internet should be required.
 11. Turn the phone screen off for 10 minutes. Confirm playback and the foreground
    service remain active.
@@ -54,7 +57,8 @@ pass/fail evidence. A test is not passed merely because the app launches.
 8. Lock the phone, disconnect/reconnect USB, close/reopen the host, and restart
    idplayer. Confirm recovery behavior for each case.
 9. Change the Windows default output endpoint. Global mode should continue
-   without reconnecting; compatibility mode currently requires recovery testing.
+   without reconnecting; the multi-endpoint mode should rebuild on a device
+   notification, while the final default-output mode requires recovery testing.
 10. Inspect diagnostics for deliberately broken ADB executable, unauthorized and
     offline states, missing companion, failed launch, failed forward, handshake
     timeout, WASAPI failure, USB unplug, and AudioTrack failure.

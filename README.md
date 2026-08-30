@@ -5,7 +5,7 @@ connection. This fork is being specialized for a portable, standard-user,
 firewall-independent Windows workflow.
 
 Development status: the Android companion builds and its unit/lint checks pass;
-the Windows global-capture path compiles and passed a local native integration
+the Windows capture hierarchy compiles and passed local native integration
 test with non-zero PCM. Physical USB, phone playback, firewall-prompt, latency,
 and long-run tests are still required before this fork is release-ready. See
 [POC results](docs/POC_RESULTS.md).
@@ -15,7 +15,8 @@ and long-run tests are still required before this fork is release-ready. See
 ```text
 all ordinary Windows applications and system sounds
                 -> global process loopback (preferred)
-                -> default-output loopback (compatibility fallback)
+                -> active-endpoint loopback + bounded mixer (legacy fallback)
+                -> default-output loopback (last-resort fallback)
                 -> 48 kHz stereo PCM16
                 -> outbound 127.0.0.1 connection
                 -> ADB forward over USB
@@ -32,10 +33,12 @@ service, or administrator elevation is intentionally required at runtime.
 On supported Windows builds, AudioShare uses Microsoft's virtual process-loopback
 device in exclude mode: it captures the global system mix except AudioShare's own
 process tree, independent of physical render endpoint. If that feature probe
-fails, it falls back to event-driven loopback of the default Windows output. The
-UI identifies which mode is active. A true multi-endpoint aggregator for older
-Windows remains planned; compatibility mode does not claim to capture apps
-explicitly routed to a different output endpoint.
+fails, it enumerates usable active render endpoints, captures each with event-driven
+WASAPI loopback, and mixes them on a bounded 10 ms clock. If no endpoint can be
+opened, it falls back to the current default output. The UI identifies the active
+mode and endpoint count. The multi-endpoint path has independent device clocks,
+so it favors bounded live-edge latency and reports drops/underruns; long-run drift
+and duplicate mirrored-output suppression still require target-hardware evidence.
 
 ## First time only
 
@@ -107,7 +110,10 @@ g++ -std=c++17 -Wall -Wextra -Werror -shared client/native/audio_capture.cpp `
 g++ -std=c++17 -Wall -Wextra -Werror `
   client/native/system_capture_integration_test.cpp `
   -o system_capture_integration_test.exe -lws2_32
-.\system_capture_integration_test.exe --require-signal
+.\system_capture_integration_test.exe --require-signal --expect-global
+# Compatibility branch checks (test-only compile flags):
+# -DAUDIOSHARE_FORCE_MULTI_ENDPOINT  -> --expect-multi
+# -DAUDIOSHARE_FORCE_DEFAULT_ENDPOINT -> --expect-default
 ```
 
 ## Documentation

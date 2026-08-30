@@ -49,8 +49,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Streaming all Windows audio (global mode)';
 
   @override
+  String streamingMultiOutputAudio(String count) {
+    return 'Streaming all active Windows outputs ($count endpoints)';
+  }
+
+  @override
   String get streamingDefaultOutputAudio =>
-      'Streaming Windows default output (compatibility mode)';
+      'Streaming Windows default output (last-resort compatibility mode)';
 
   @override
   String get phaseCheckingAdb => 'Checking USB and ADB';
