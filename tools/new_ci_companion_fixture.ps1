@@ -15,8 +15,20 @@ function Invoke-CheckedTool {
         [Parameter(Mandatory = $true)] [string[]] $Arguments,
         [Parameter(Mandatory = $true)] [string] $Description
     )
-    $output = @(& $Tool @Arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) {
+    # Windows PowerShell promotes any native stderr line to a terminating
+    # NativeCommandError when ErrorActionPreference is Stop. keytool and some
+    # Android SDK tools write normal progress messages to stderr, so inspect
+    # the process exit code explicitly instead of treating that output as a
+    # failure.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = @(& $Tool @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($exitCode -ne 0) {
         throw "$Description failed: $($output -join [Environment]::NewLine)"
     }
     return @($output | ForEach-Object { $_.ToString() })
