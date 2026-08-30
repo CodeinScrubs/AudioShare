@@ -599,8 +599,27 @@ class DataSource extends ChangeNotifier {
       socketName: socketName,
       generation: generation,
     );
-    _ensureCurrent(generation);
     _forwardSession = forward;
+    try {
+      _ensureCurrent(generation);
+    } catch (_) {
+      // ADB creates the mapping before this await completes. If the device
+      // disappears (or the user disconnects) during that window, the normal
+      // session cleanup could not have seen the mapping yet. Remove this
+      // exact stale mapping here so a superseded attempt cannot leak a port.
+      if (identical(_forwardSession, forward)) {
+        _forwardSession = null;
+        try {
+          await _adb.removeForward(forward);
+        } catch (cleanupError, cleanupStack) {
+          debugPrint(
+            'Could not remove superseded ADB forward: '
+            '$cleanupError\n$cleanupStack',
+          );
+        }
+      }
+      rethrow;
+    }
 
     _setSessionPhase(deviceId, ConnectionPhase.startingCompanion);
     await _adb.launchCompanion(

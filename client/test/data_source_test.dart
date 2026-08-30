@@ -45,6 +45,7 @@ class FakeAdbController implements AdbController {
   int launchFailuresRemaining = 0;
   bool disposed = false;
   Completer<void>? removeForwardGate;
+  Completer<void>? createForwardGate;
 
   @override
   String get executablePath => 'fake-adb.exe';
@@ -92,6 +93,7 @@ class FakeAdbController implements AdbController {
     required int generation,
   }) async {
     createForwardCalls++;
+    await createForwardGate?.future;
     return AdbForwardSession(
       deviceId: deviceId,
       hostPort: 43210,
@@ -486,6 +488,28 @@ void main() {
       expect(adb.createForwardCalls, 2);
       expect(adb.removeForwardCalls, greaterThanOrEqualTo(1));
       expect(dataSource.lastError?.type, UiErrorType.companionLaunchFailed);
+    },
+  );
+
+  test(
+    'a superseded forward creation removes the mapping it created',
+    () async {
+      adb
+        ..snapshot = [usbPhone()]
+        ..createForwardGate = Completer<void>();
+      final dataSource = createSource();
+
+      await waitUntil(() => adb.createForwardCalls == 1);
+      adb.publish([]);
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.waitingForPhone,
+      );
+
+      adb.createForwardGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(adb.removeForwardCalls, 1);
+      expect(dataSource.getConnectState('USB123'), 0);
     },
   );
 

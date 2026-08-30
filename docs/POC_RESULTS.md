@@ -351,16 +351,19 @@ BB138948ECD47D2F2F88FA1CE0632261DEB231E3539F6A7DD566A6D02736BB61
 
 It is not a distributable artifact. Production signing requires a stable
 external key supplied through the documented environment variables. The debug
-APK intentionally bundled only by Windows Debug packaging has SHA-256:
+APK intentionally bundled only by Windows Debug packaging was regenerated from
+the companion source at `AudioShare-Android` commit
+`755d30c232eddd6a1fc38078ca0dd67e479dfab5` after the live-edge queue and
+heartbeat-failure fixes. Its SHA-256 is:
 
 ```text
-D32112C9082773CECED3ED46244F70D0FE658FC91BB7314E2468E4B3C6D282A0
+3298217A757D0AC63F10D900DD00544BF2462A058E583BC81D5CBE46BDF1FD57
 ```
 
 The final clean serialized Android regression reran `testDebugUnitTest`,
 `lintRelease`, `assembleDebug`, and `assembleRelease`: `BUILD SUCCESSFUL in
-1m 36s` with 86 tasks executed and two up-to-date, including three live-edge
-queue tests. Flutter analysis and all 19 host tests also passed.
+3m 14s` with 88 tasks executed under the Gradle 9.7.1 wrapper, including three
+live-edge queue tests. Flutter analysis and all 19 host tests also passed.
 The project's Gradle 10 deprecation warning was removed by migrating the Android
 Groovy DSL to assignment syntax. Hosted CI is added to keep the wrapper, Android
 build, Flutter analysis/tests, and MSVC Windows build under continuous verification.
