@@ -1,0 +1,142 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: powershell
+        working-directory: client
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate tag and release notes
+        run: |
+          $versionLine = Get-Content .\pubspec.yaml |
+            Where-Object { $_ -match '^version:\s*' } |
+            Select-Object -First 1
+          if (-not $versionLine) { throw 'pubspec version is missing.' }
+          $version = (($versionLine -replace '^version:\s*', '') -split '\+')[0]
+          if ($env:GITHUB_REF_NAME -cne "v$version") {
+            throw "Tag '$env:GITHUB_REF_NAME' does not match pubspec version '$version'."
+          }
+          if (-not (Test-Path -LiteralPath "..\docs\releases\$env:GITHUB_REF_NAME.md")) {
+            throw 'Release notes for this tag are missing.'
+          }
+
+      - name: Set up Java for Android package verification
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Resolve, format, analyze, and test Flutter code
+        run: |
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter gen-l10n
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+
+      - name: Build Debug host and native regressions
+        run: |
+          flutter build windows --debug
+          cmake --build build/windows/x64 --config Debug --target wire_protocol_test audio_mixer_test system_capture_integration_test
+          $wireTest = Get-ChildItem build/windows/x64 -Recurse -Filter wire_protocol_test.exe | Select-Object -First 1
+          $mixerTest = Get-ChildItem build/windows/x64 -Recurse -Filter audio_mixer_test.exe | Select-Object -First 1
+          $integrationTest = Get-ChildItem build/windows/x64 -Recurse -Filter system_capture_integration_test.exe | Select-Object -First 1
+          if (-not $wireTest -or -not $mixerTest -or -not $integrationTest) {
+            throw 'Native regression executables were not produced.'
+          }
+          & $wireTest.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $mixerTest.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $integrationTest.DirectoryName
+          try {
+            & $integrationTest.FullName --expect-handshake-stop
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $integrationTest.FullName --expect-handshake-error
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $integrationTest.FullName --expect-disconnect-error
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Install pinned Android tools
+        working-directory: .
+        run: |
+          & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" `
+            "platforms;android-36" "build-tools;36.1.0"
+
+      - name: Download and verify pinned companion release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $config = Get-Content .\client\companion-release.json -Raw | ConvertFrom-Json
+          $destination = Join-Path $env:RUNNER_TEMP 'audioshare-companion-release'
+          $null = New-Item -ItemType Directory -Force -Path $destination
+          gh release download $config.tag `
+            --repo $config.repository `
+            --pattern $config.asset `
+            --dir $destination
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $apk = Join-Path $destination $config.asset
+          .\tools\verify_companion_apk.ps1 `
+            -Apk $apk `
+            -ExpectedPackage 'com.audioshare.usbcompanion' `
+            -MinimumVersionCode 4 `
+            -ExpectedCertificateSha256 $config.certificateSha256
+          "AUDIOSHARE_COMPANION_APK=$apk" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "AUDIOSHARE_COMPANION_CERT_SHA256=$($config.certificateSha256)" |
+            Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build and validate portable Release package
+        run: |
+          flutter build windows --release
+          $output = "..\dist\AudioShare-USB-Windows-$env:GITHUB_REF_NAME.zip"
+          ..\tools\package_windows_release.ps1 `
+            -BundleDirectory .\build\windows\x64\runner\Release `
+            -OutputZip $output
+
+      - name: Publish GitHub prerelease
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $zip = ".\dist\AudioShare-USB-Windows-$tag.zip"
+          $arguments = @(
+            'release', 'create', $tag,
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--verify-tag',
+            '--title', "AudioShare USB $tag",
+            '--notes-file', ".\docs\releases\$tag.md"
+          )
+          if ($tag.Contains('-')) { $arguments += '--prerelease' }
+          $arguments += @($zip, "$zip.sha256")
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

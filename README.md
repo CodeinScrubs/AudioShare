@@ -4,17 +4,21 @@ Stream **all Windows system audio** to an Android phone speaker over a USB ADB
 connection. This fork is being specialized for a portable, standard-user,
 firewall-independent Windows workflow.
 
-Development status: the Android companion passes clean unit, lint, and debug
-builds; CI also exercises a release build with an ephemeral test signer. A
+Development status: the Android companion passes clean unit, lint, debug, and
+permanently signed release builds. A
 real Android 16 emulator passed a cold-install, authenticated
 ADB-forwarded stream with enforced speaker route, wake-lock continuity, and
 exact cleanup. Headless virtual audio can underrun, so the current Android
 hardening pass treats zero-drop timing as a physical-device gate. The Windows
 capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
-non-zero PCM. Flutter analysis and 20 supervisor/lifecycle/security tests pass. A physical
-Samsung audible-output/USB-cable run, restricted-PC firewall check, measured
-latency, and long-run test remain the final hardware gates. See [POC results](docs/POC_RESULTS.md).
+non-zero PCM. Flutter analysis and 20 supervisor/lifecycle/security tests pass.
+The complete audible path is now hardware tested on a Samsung Galaxy A52s with
+Android 14: global-system capture, a 10 ms host queue high-water mark, and zero
+visible host/Android drops in the initial run. Screen-off endurance, repeated
+USB recovery, measured latency, restricted-PC checks, and the two-hour run remain
+stable-release gates. See [hardware results](docs/HARDWARE_TEST_RESULTS.md) and
+[POC results](docs/POC_RESULTS.md).
 
 ## Architecture
 
@@ -75,7 +79,7 @@ driver can require administrator access and is outside AudioShare's control.
 Once the Windows host is open, the intended workflow requires no Android UI, IP
 address, Wi-Fi, Internet, firewall approval, or Connect click. Automatic Windows
 startup and tray UI are not implemented yet. The zero-click USB supervisor is
-unit tested but not yet verified on the target phone. A deliberate **Disconnect** stays
+unit tested but not yet verified across a target-phone reconnect. A deliberate **Disconnect** stays
 disconnected while the current cable session remains; unplug/replug restores the
 normal automatic path.
 
@@ -92,7 +96,7 @@ flutter test
 flutter build windows --debug
 ```
 
-Debug builds bundle the clearly labeled version-code 3 debug companion APK. A
+Debug builds bundle the clearly labeled version-code 4 debug companion APK. A
 distributable release must use a stable signing key and provide both the signed
 APK and its pinned signer-certificate SHA-256 explicitly. Configuration fails
 unless Android SDK `apkanalyzer` and `apksigner` confirm the signature, exact
@@ -110,6 +114,12 @@ flutter build windows --release
 The packaging script checks every manifest hash, tests the ZIP after extraction
 to a path containing spaces, and proves that missing or altered files are
 rejected. It writes the archive SHA-256 beside the ZIP.
+
+Public tags are assembled by the release workflow from the pinned companion in
+`client/companion-release.json`. The companion's package, release signature,
+certificate, version, debug state, and permission allowlist are verified before
+the Windows package is built. Windows binaries are portable but not Authenticode
+signed; users may therefore see Microsoft SmartScreen reputation warnings.
 
 The sibling `client android app` Git repository owns the native companion:
 
@@ -157,6 +167,7 @@ g++ -std=c++17 -Wall -Wextra -Werror `
 - [Evidence and POC results](docs/POC_RESULTS.md)
 - [Layered troubleshooting](docs/TROUBLESHOOTING.md)
 - [Manual test plan](docs/MY_TEST_PLAN.md)
+- [Physical-device results](docs/HARDWARE_TEST_RESULTS.md)
 - [Pinned upstream baseline](docs/BASELINE.md)
 
 ## License

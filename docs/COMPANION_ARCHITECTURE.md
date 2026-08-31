@@ -1,9 +1,10 @@
 # AudioShare USB Companion Architecture
 
 Status: implemented production direction. Real Android emulator transport,
-route, screen-off, and cleanup POCs pass; a physical Samsung and restricted
-Windows target remain required for audible-output, USB-cable, firewall, and
-latency claims.
+route, screen-off, and cleanup POCs pass. An initial physical Samsung run now
+proves the authorized USB-cable and audible built-in-speaker path; repeated
+reconnect, screen-off endurance, measured latency, and restricted-Windows
+firewall/policy acceptance remain open.
 
 ## Product scope
 
@@ -131,8 +132,9 @@ memory-to-AudioTrack only. There is no network, microphone, camera, location,
 storage, Bluetooth, analytics, telemetry, or cloud dependency.
 
 Open physical-device items include force-stop policy, notification-denied
-behavior on the target Samsung, repeated cable reconnect, audible route proof,
-measured latency, and long-run drift/underrun evidence. The emulator has already
+behavior on the target Samsung, repeated cable reconnect, measured latency, and
+long-run drift/underrun evidence. Initial audible route and physical USB transport
+are hardware tested. The emulator has already
 exercised cold install, ADB launch, playback-head and route readiness, error
 propagation, exact cleanup, and a 60-second screen-off session.
 
@@ -166,7 +168,8 @@ still measurement-driven follow-up work.
 
 Companion compilation, unit tests, lint, APK inspection, ADB forwarding,
 authenticated streaming, emulated speaker routing, screen-off wake-lock
-continuity, and exact mapping cleanup have local evidence. A physical phone is
-still required to prove the actual USB cable and audible built-in speaker. The
-restricted Windows target is required to prove no Defender prompt, standard-user
-policy acceptance, and final latency.
+continuity, and exact mapping cleanup have local evidence. A physical Galaxy A52s
+now proves the initial actual-cable and audible built-in-speaker path. The
+restricted Windows target and extended phone tests are still required to prove
+no Defender prompt, standard-user policy acceptance, reconnect endurance, and
+final latency.

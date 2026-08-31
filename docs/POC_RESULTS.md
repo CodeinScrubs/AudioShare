@@ -141,13 +141,16 @@ This is not integration evidence. It also reinforces the production rule that
 only state `device` plus a positively identified USB transport is eligible for
 metadata, package, launch, or forwarding commands.
 
-### Physical-device checks still blocked
+### Physical-device checks
 
-The following require a physical authorized Android device and remain NOT RUN:
+The initial 2026-08-31 Galaxy A52s run is **HARDWARE TESTED** for authorized
+physical USB transport, explicit companion installation, global-system capture,
+audible speaker output, a 10 ms host queue high-water mark, and zero visible
+host/Android drops in the captured diagnostics. See `HARDWARE_TEST_RESULTS.md`.
 
-- audible built-in-speaker output on the Samsung;
-- proof that the tested transport traverses the physical USB cable with Wi-Fi
-  disabled;
+The following remain NOT RUN:
+
+- Wi-Fi-disabled multi-application playback;
 - sustained physical-device throughput and measured end-to-end latency;
 - forced disconnect and repeated reconnect;
 - transport socket ownership during streaming;
@@ -329,8 +332,9 @@ awaited forward cleanup, and native capture readiness. Hosted Windows CI now
 builds the Flutter Debug and Release configurations with MSVC, runs the native
 transport regressions, creates an ephemeral CI-only signed companion to exercise
 the release certificate gate, and validates an extracted portable ZIP. The
-local Visual Studio 2026 Insiders installation still lacks the Desktop C++
-workload, CMake tools, and Windows 10 SDK, so no local MSVC artifact is claimed.
+local Visual Studio 2026 Insiders installation now includes Desktop C++, CMake,
+and Windows SDK tooling. A local MSVC Debug build, native regressions, and signed
+Release package are verified below.
 
 The Windows CMake project also configured and generated successfully with
 CMake 4.3.2/Ninja against a temporary MinGW toolchain. The native DLL and
@@ -370,8 +374,9 @@ android.permission.WAKE_LOCK
 `mediaPlayback`; the exported bridge requires shell-only `DUMP`. Installation,
 ADB launch, forward transport, playback-head readiness, AudioTrack writes,
 actual route verification, 60-second screen-off behavior, wake-lock ownership,
-and cleanup are emulator INTEGRATION TESTED. Foreground notification denial and
-audible output remain physical-device checks.
+and cleanup are emulator INTEGRATION TESTED. The initial physical-phone run now
+proves audible output; notification-denied policy and extended screen-off behavior
+remain physical-device checks.
 
 The locally rebuilt unsigned POC release APK SHA-256 at this checkpoint is:
 
@@ -398,3 +403,37 @@ also passed.
 The project's Gradle 10 deprecation warning was removed by migrating the Android
 Groovy DSL to assignment syntax. Hosted CI is added to keep the wrapper, Android
 build, Flutter analysis/tests, and MSVC Windows build under continuous verification.
+
+## 2026-08-31 release-candidate verification
+
+The earlier unsigned artifact above is retained as historical POC evidence and
+is not distributed. Version-code 4 / `1.0.0-rc.1` was rebuilt with the permanent
+external release identity and passed unit tests, release lint, APK assembly,
+`apksigner`, and the Windows host's package/certificate/permission verifier:
+
+```text
+Android: BUILD SUCCESSFUL in 1m 22s; 89 actionable tasks
+package=com.audioshare.usbcompanion
+versionCode=4
+versionName=1.0.0-rc.1
+debuggable=false
+permissions=4
+APK SHA-256=1cd87cc2c06898cf42f0b3f98986e5c00c7dbcb45decc67ece8d6211ec62c06b
+certificate SHA-256=23bb6499dbb6aa3610d0a9ee0df9c922d9023e4b7990dc23ac6c1743f215950c
+```
+
+The matching `3.0.0-rc.1+1` Windows host passed formatting, analysis, all 20
+Flutter tests, an MSVC Debug build, wire-protocol and mixer tests, and global
+system-capture integration with non-zero PCM and zero reported capture/endpoint
+drops, underruns, or discontinuities. The permanently signed Release bundle then
+passed complete-manifest validation both before and after extraction to a path
+containing spaces, plus deliberate missing/altered-file rejection:
+
+```text
+WINDOWS_BUNDLE_OK files=30
+WINDOWS_RELEASE_ZIP_OK
+SHA-256=7265779f3c09c2fbe1495f0a1d87688e77235c8e18a6825c6c003f1e4138dcda
+```
+
+These are build and local integration results. The extended hardware gates in
+`HARDWARE_TEST_RESULTS.md` remain required before stable promotion.
