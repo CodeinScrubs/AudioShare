@@ -437,3 +437,42 @@ SHA-256=7265779f3c09c2fbe1495f0a1d87688e77235c8e18a6825c6c003f1e4138dcda
 
 These are build and local integration results. The extended hardware gates in
 `HARDWARE_TEST_RESULTS.md` remain required before stable promotion.
+
+## 2026-08-31 RC2 hardening checkpoint
+
+The post-RC1 hardening changes were rebuilt from the final working tree. The
+Android companion is now version code 5 / `1.0.0-rc.2`; the Windows host is
+`3.0.0-rc.2+2`. Flutter formatting and analysis are clean and all 31 host
+supervisor/security/lifecycle/persistence tests pass. Android
+`testDebugUnitTest`, debug lint, release lint, and signed release assembly pass
+(31 Android unit tests in the current suite). The release APK verifier confirms
+the expected package, exact version code, non-debuggable manifest,
+four-permission allowlist, and the pinned certificate:
+
+```text
+Android APK SHA-256=af3c729609e6944364a114bd8dde8e8494d0f8dbf126a58014745284f5391678
+certificate SHA-256=23bb6499dbb6aa3610d0a9ee0df9c922d9023e4b7990dc23ac6c1743f215950c
+```
+
+The checked-in Windows Debug companion was regenerated from the same Android
+source and verified as package `com.audioshare.usbcompanion.debug`, version
+code 5. The final Windows Release bundle contains the exact signed RC2 APK,
+reports 31 files, and passes validation before and after extraction plus
+missing-file and altered-file rejection. ZIP metadata can vary between builders,
+so every published archive carries its own authoritative adjacent `.sha256` asset:
+
+```text
+AudioShare-USB-Windows-v3.0.0-rc.2.zip
+checksum=AudioShare-USB-Windows-v3.0.0-rc.2.zip.sha256
+```
+
+Rebuilt native MSVC tests pass for wire protocol, mixer, handshake retry/stop/
+error/disconnect, and all three capture modes. With generated Windows system
+sound, global, forced multi-endpoint, and forced default-output modes each
+produced non-zero PCM with zero host drops; endpoint/capture discontinuities
+were reported as diagnostics rather than hidden. A physical Galaxy A52s / Android
+14 run with the final RC2 APK and host reached `Streaming all Windows audio
+(global mode)`, created an exact USB ADB forward, and showed no stale retry
+dialog after automatic recovery. Long-duration screen-off, repeated recovery,
+measured latency, restricted-PC, and two-hour endurance gates remain open for
+stable promotion.

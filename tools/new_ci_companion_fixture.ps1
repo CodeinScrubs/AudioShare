@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $OutputDirectory,
 
-    [string] $GithubEnvironmentFile = $env:GITHUB_ENV
+    [string] $GithubEnvironmentFile = $env:GITHUB_ENV,
+
+    [ValidateRange(1, [int]::MaxValue)]
+    [int] $VersionCode = 5
 )
 
 Set-StrictMode -Version Latest
@@ -67,11 +70,11 @@ $signedApk = Join-Path $directory 'companion-ci-signed.apk'
 $keystore = Join-Path $directory 'ci-only-keystore.jks'
 [IO.File]::WriteAllText(
     $manifest,
-    @'
+    @"
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.audioshare.usbcompanion"
-    android:versionCode="3"
+    android:versionCode="$VersionCode"
     android:versionName="ci-only">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -80,7 +83,7 @@ $keystore = Join-Path $directory 'ci-only-keystore.jks'
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application android:hasCode="false" android:label="AudioShare CI-only fixture" />
 </manifest>
-'@,
+"@,
     [Text.UTF8Encoding]::new($false)
 )
 

@@ -83,6 +83,20 @@ jobs:
           & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" `
             "platforms;android-36" "build-tools;36.1.0"
 
+      - name: Verify checked-in Debug companion identity
+        working-directory: .
+        run: |
+          $apk = '.\client\assets\android\audioshare-companion-poc-debug.apk'
+          $analyzer = "$env:ANDROID_HOME\cmdline-tools\latest\bin\apkanalyzer.bat"
+          $package = & $analyzer manifest application-id $apk
+          $version = & $analyzer manifest version-code $apk
+          if ($package -cne 'com.audioshare.usbcompanion.debug') {
+            throw "Wrong Debug companion package: '$package'."
+          }
+          if ([int] $version -ne 5) {
+            throw "Wrong Debug companion version code: '$version'."
+          }
+
       - name: Create ephemeral CI-only signed companion
         working-directory: .
         run: |
@@ -97,7 +111,7 @@ jobs:
             .\tools\verify_companion_apk.ps1 `
               -Apk $env:AUDIOSHARE_COMPANION_APK `
               -ExpectedPackage 'com.audioshare.usbcompanion' `
-              -MinimumVersionCode 3 `
+              -ExpectedVersionCode 5 `
               -ExpectedCertificateSha256 ('0' * 64)
             $accepted = $true
           } catch {
@@ -106,6 +120,29 @@ jobs:
             }
           }
           if ($accepted) { throw 'Wrong companion signer unexpectedly passed verification.' }
+
+      - name: Prove too-new companion version is rejected
+        working-directory: .
+        run: |
+          $directory = Join-Path $env:RUNNER_TEMP 'audioshare-too-new-companion'
+          .\tools\new_ci_companion_fixture.ps1 `
+            -OutputDirectory $directory `
+            -GithubEnvironmentFile '' `
+            -VersionCode 6
+          $accepted = $false
+          try {
+            .\tools\verify_companion_apk.ps1 `
+              -Apk (Join-Path $directory 'companion-ci-signed.apk') `
+              -ExpectedPackage 'com.audioshare.usbcompanion' `
+              -ExpectedVersionCode 5 `
+              -ExpectedCertificateSha256 ('0' * 64)
+            $accepted = $true
+          } catch {
+            if ($_.Exception.Message -notlike 'Wrong companion version code*') {
+              throw
+            }
+          }
+          if ($accepted) { throw 'Too-new companion unexpectedly passed verification.' }
 
       - name: Build and verify Windows Release package
         run: |

@@ -115,6 +115,27 @@ al:36
     adb.dispose();
   });
 
+  test('one flaky USB metadata query does not hide other devices', () async {
+    final runner = FakeAdbRunner()
+      ..enqueue(
+        stdout: '''List of devices attached
+USB123 device product:a model:Working transport_id:1
+USB456 device product:b model:Flaky transport_id:2
+''',
+      )
+      ..enqueue(stdout: 'sn:USB123\nmo:Working\nmf:Test\nav:14\nal:34\n')
+      ..enqueue(exitCode: 1, stderr: 'device is offline');
+    final adb = AdbService(runner: runner, adbPath: 'fake-adb');
+
+    final devices = await adb.devices();
+
+    expect(devices, hasLength(2));
+    expect(devices[0].metadataError, isNull);
+    expect(devices[1].metadataError, contains('device is offline'));
+    expect(devices[1].connectableUsb, isTrue);
+    adb.dispose();
+  });
+
   test('Windows transport classifier rejects every non-USB ADB form', () {
     expect(
       classifyWindowsAdbTransport('USB123', const {}),
@@ -160,6 +181,20 @@ al:36
     expect(parseCompanionVersionCode('otherVersionCode=2'), isNull);
   });
 
+  test('activity launch requires an explicit successful status', () {
+    expect(
+      hasSuccessfulActivityLaunchStatus(
+        'Starting: Intent { ... }\nStatus: ok\nComplete\n',
+      ),
+      isTrue,
+    );
+    expect(
+      hasSuccessfulActivityLaunchStatus('Starting: Intent { ... }\n'),
+      isFalse,
+    );
+    expect(hasSuccessfulActivityLaunchStatus('Status: Error\n'), isFalse);
+  });
+
   test(
     'companion handshake inputs are redacted and cleanup is exact',
     () async {
@@ -167,7 +202,7 @@ al:36
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=3 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=5 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_fixtureApkHash  /data/app/debug/base.apk\n')
         ..enqueue(stdout: '43210\n');
       final adb = AdbService(
@@ -187,7 +222,9 @@ al:36
       );
       expect(forward.hostPort, 43210);
 
-      runner.enqueue();
+      runner.enqueue(
+        stdout: 'Starting: Intent { ... }\nStatus: ok\nComplete\n',
+      );
       await adb.launchCompanion(
         deviceId: 'USB123',
         socketName: 'as_1_test',
@@ -220,7 +257,7 @@ al:36
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=3 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=5 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_wrongFixtureApkHash  /data/app/debug/base.apk\n');
       final adb = AdbService(
         runner: runner,
@@ -253,6 +290,26 @@ al:36
     adb.dispose();
   });
 
+  test(
+    'newer installed companion requests a host update instead of downgrade',
+    () async {
+      final runner = FakeAdbRunner()
+        ..enqueue(stdout: 'package:/data/app/release/base.apk\n')
+        ..enqueue(stdout: '    versionCode=6 minSdk=26 targetSdk=36\n');
+      final adb = AdbService(runner: runner, adbPath: 'fake-adb');
+
+      await expectLater(
+        adb.findCompanion('USB123'),
+        throwsA(isA<CompanionHostUpdateRequiredException>()),
+      );
+      expect(
+        runner.requests.map((request) => request.operation),
+        isNot(contains('verify installed Android companion APK')),
+      );
+      adb.dispose();
+    },
+  );
+
   test('invalid dynamic forward output fails closed', () async {
     final runner = FakeAdbRunner()..enqueue(stdout: 'not-a-port\n');
     final adb = AdbService(runner: runner, adbPath: 'fake-adb');
@@ -267,4 +324,29 @@ al:36
     );
     adb.dispose();
   });
+
+  test(
+    'wrong-key companion install returns an actionable replacement error',
+    () async {
+      final companionDirectory = await createCompanionFixture();
+      final runner = FakeAdbRunner()
+        ..enqueue(
+          exitCode: 1,
+          stdout:
+              'Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures differ]\n',
+        );
+      final adb = AdbService(
+        runner: runner,
+        adbPath: 'fake-adb',
+        companionDirectoryPath: companionDirectory.path,
+      );
+
+      await expectLater(
+        adb.installBundledCompanion('USB123'),
+        throwsA(isA<CompanionReplacementRequiredException>()),
+      );
+      adb.dispose();
+      await companionDirectory.delete(recursive: true);
+    },
+  );
 }

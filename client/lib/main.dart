@@ -315,6 +315,10 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
               _ =>
                 '${l10n.deviceAndroidVersionFormatted(device.androidVersion, apiLevel)}${device.usb ? '' : l10n.deviceNetworkAddressFormatted(device.ip, port)}',
             };
+            final visibleDeviceStatus =
+                device.metadataError != null && connectState == 0
+                ? l10n.deviceMetadataUnavailable
+                : deviceStatus;
             return SizedBox(
               height: 72,
               child: Row(
@@ -337,7 +341,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            deviceStatus,
+                            visibleDeviceStatus,
                             style: const TextStyle(fontSize: 12),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -432,13 +436,29 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
   Widget _buildCheckBox(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.only(left: 10, bottom: 10),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Checkbox(
-            value: _dataSource.lastCheck,
-            onChanged: (value) => _dataSource.lastCheck = value ?? false,
+          Row(
+            children: [
+              Checkbox(
+                value: _dataSource.lastCheck,
+                onChanged: (value) => _dataSource.lastCheck = value ?? false,
+              ),
+              Expanded(child: Text(l10n.autoConnectLastDevice)),
+            ],
           ),
-          Expanded(child: Text(l10n.autoConnectLastDevice)),
+          if (Prefs.lastError != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, right: 12, bottom: 4),
+              child: Text(
+                l10n.preferencesUnavailable,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 12,
+                ),
+              ),
+            ),
         ],
       ),
     );

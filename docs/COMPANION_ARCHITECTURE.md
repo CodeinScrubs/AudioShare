@@ -122,7 +122,13 @@ initial POC uses:
   memory limit;
 - `AudioTrack` streaming PCM with low-latency mode, a 40 ms target buffer and
   20 ms API-31+ start threshold, required built-in-speaker selection,
-  media-audio focus handling, and periodic verification of the actual route;
+  media-audio focus handling, and periodic verification of the actual route.
+  A missing route report receives a fresh two-second grace window each time it
+  first appears, so a later audio-policy transition cannot reuse an expired
+  startup deadline;
+- a playback watchdog that observes both successful writes and the Android
+  playback head, terminating with an explicit error if pending PC audio is not
+  consumed for two seconds;
 - a session-scoped partial wake lock for screen-off playback; and
 - a watchdog that closes a receiver when the host never connects.
 
@@ -143,6 +149,8 @@ propagation, exact cleanup, and a 60-second screen-off session.
 The host retains the reliability design from `LOCKED_DOWN_WINDOWS_DESIGN.md`:
 
 - structured ADB results, timeouts, bounded output, and generation ownership;
+- per-device metadata isolation, so one flaky authorized phone cannot hide
+  other usable USB devices;
 - USB-only device classification and sanitized ADB child environments;
 - no `remove-all`, `kill-server`, wireless ADB workflow, or ambient-server
   disruption;
@@ -163,6 +171,12 @@ render endpoint and rebuilds on `IMMNotificationClient` events; only when no
 endpoint can be opened does it follow the default console render endpoint.
 Independent-clock drift correction and duplicate mirrored-output suppression are
 still measurement-driven follow-up work.
+
+The host waits up to 15 seconds for capture readiness because the preferred
+global process-loopback feature probe has its own five-second native deadline
+before compatibility endpoint construction begins. The Android accept watchdog
+closes only the listening socket, so a client accepted at the timeout boundary
+cannot be torn down after it has connected.
 
 ## Evidence gate
 

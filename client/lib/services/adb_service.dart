@@ -7,7 +7,37 @@ import 'package:crypto/crypto.dart';
 import '../models/device_model.dart';
 
 const _companionLaunchAction = 'com.audioshare.usbcompanion.LAUNCH_SESSION';
-const minimumCompanionVersionCode = 3;
+// Keep this synchronized with the companion artifact accepted by the
+// release workflow. A newer phone-side companion must never be silently
+// downgraded by an older portable host.
+const bundledCompanionVersionCode = 5;
+const minimumCompanionVersionCode = bundledCompanionVersionCode;
+
+class CompanionHostUpdateRequiredException implements Exception {
+  const CompanionHostUpdateRequiredException({
+    required this.installedVersionCode,
+    required this.hostVersionCode,
+  });
+
+  final int installedVersionCode;
+  final int hostVersionCode;
+
+  @override
+  String toString() =>
+      'The installed Android companion (version code '
+      '$installedVersionCode) is newer than this Windows host (version code '
+      '$hostVersionCode). Update AudioShare for Windows before connecting.';
+}
+
+class CompanionReplacementRequiredException implements Exception {
+  const CompanionReplacementRequiredException();
+
+  @override
+  String toString() =>
+      'Android already has an AudioShare companion signed by a different '
+      'publisher. Uninstall that companion from the phone, then choose '
+      'Install companion again. AudioShare will not silently remove an app.';
+}
 
 int? parseCompanionVersionCode(String packageDump) {
   final match = RegExp(
@@ -16,6 +46,12 @@ int? parseCompanionVersionCode(String packageDump) {
   ).firstMatch(packageDump);
   return match == null ? null : int.tryParse(match.group(1)!);
 }
+
+bool hasSuccessfulActivityLaunchStatus(String output) => RegExp(
+  r'^\s*Status:\s*ok\s*$',
+  multiLine: true,
+  caseSensitive: false,
+).hasMatch(output);
 
 class CompanionInstallation {
   const CompanionInstallation(this.packageName);
@@ -415,16 +451,30 @@ class AdbService implements AdbController {
       final transportId = int.tryParse(attributes['transport_id'] ?? '');
 
       DeviceModel? metadata;
+      String? metadataError;
       if (state == AdbDeviceState.authorized &&
           transport == AdbTransportType.usb) {
         metadata = _deviceCache[deviceId];
-        metadata ??= await _loadMetadata(
-          deviceId,
-          transport,
-          transportId,
-          attributes,
-        );
-        _deviceCache[deviceId] = metadata;
+        if (metadata == null) {
+          try {
+            metadata = await _loadMetadata(
+              deviceId,
+              transport,
+              transportId,
+              attributes,
+            );
+            _deviceCache[deviceId] = metadata;
+          } catch (error, stack) {
+            // Optional metadata must not make every other connected phone
+            // disappear. Keep a basic, connectable model and retry metadata
+            // on the next poll.
+            metadataError = error.toString();
+            stderr.writeln(
+              'Android metadata unavailable for $deviceId: '
+              '$error\n$stack',
+            );
+          }
+        }
       }
       final ipPort = _getIpPort(deviceId);
       parsed.add(
@@ -442,6 +492,7 @@ class AdbService implements AdbController {
               adbState: state,
               transportType: transport,
               transportId: transportId,
+              metadataError: metadataError,
             ),
       );
     }
@@ -602,6 +653,12 @@ class AdbService implements AdbController {
           '${installation.packageName}.',
         );
       }
+      if (versionCode > bundledCompanionVersionCode) {
+        throw CompanionHostUpdateRequiredException(
+          installedVersionCode: versionCode,
+          hostVersionCode: bundledCompanionVersionCode,
+        );
+      }
       if (versionCode >= minimumCompanionVersionCode &&
           await _matchesBundledCompanion(
             deviceId,
@@ -691,13 +748,20 @@ class AdbService implements AdbController {
         'No companion APK is included in this AudioShare build.',
       );
     }
-    final installResult = await _required(
+    final installResult = await run(
       AdbCommandRequest(
         operation: 'install Android companion',
         arguments: ['-s', deviceId, 'install', '-r', apkPath],
         timeout: const Duration(minutes: 2),
       ),
     );
+    if (!installResult.succeeded) {
+      final details = '${installResult.stdout}\n${installResult.stderr}';
+      if (details.contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
+        throw const CompanionReplacementRequiredException();
+      }
+      throw AdbCommandException(installResult);
+    }
     if (!installResult.stdout
         .split(RegExp(r'\r?\n'))
         .any((line) => line.trim() == 'Success')) {
@@ -762,7 +826,8 @@ class AdbService implements AdbController {
       ),
     );
     final combined = '${result.stdout}\n${result.stderr}';
-    if (combined.contains('Error:') ||
+    if (!hasSuccessfulActivityLaunchStatus(combined) ||
+        combined.contains('Error:') ||
         combined.contains('Error type') ||
         combined.contains('Exception')) {
       throw AdbCommandException(

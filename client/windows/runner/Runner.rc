@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.ysbing" "\0"
-            VALUE "FileDescription", "audioshare_client" "\0"
+            VALUE "CompanyName", "CodeinScrubs" "\0"
+            VALUE "FileDescription", "Stream Windows audio to an Android phone over USB" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "audioshare_client" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.ysbing. All rights reserved." "\0"
-            VALUE "OriginalFilename", "audioshare_client.exe" "\0"
-            VALUE "ProductName", "audioshare_client" "\0"
+            VALUE "InternalName", "AudioShare" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 CodeinScrubs. All rights reserved." "\0"
+            VALUE "OriginalFilename", "audioshare.exe" "\0"
+            VALUE "ProductName", "AudioShare USB" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

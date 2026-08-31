@@ -15,6 +15,8 @@
   "usbUnauthorized": "请解锁手机并允许 USB 调试。",
   "usbOffline": "USB 设备离线。请重新连接数据线。",
   "ignoredAdbDevice": "已忽略：请通过 USB 连接此设备。",
+  "deviceMetadataUnavailable": "USB 设备已就绪，但无法读取可选设备信息。",
+  "preferencesUnavailable": "无法保存设置。重启后自动重连选项可能会重置。",
   "streamingAllSystemAudio": "正在传输全部 Windows 系统音频",
   "streamingGlobalSystemAudio": "正在传输全部 Windows 音频（全局模式）",
   "streamingMultiOutputAudio": "正在传输所有活动的 Windows 输出（{count} 个）",

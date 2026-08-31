@@ -108,7 +108,7 @@ normal sequence numbers are strictly increasing for the lifetime of one
 connection; a terminal `ERROR` may use reserved sequence `0`.
 Focus, route, and queue state are reported in enhanced STATS rather than as
 separate control messages. The Windows host requires companion application
-version code 3 or newer, requires the installed base APK SHA-256 to exactly
+exactly version code 5, requires the installed base APK SHA-256 to exactly
 match the APK bundled with that host build, and validates READY fields before
 starting capture. A fatal handshake ERROR is reported to the Dart supervisor
 immediately rather than waiting for the connection deadline.

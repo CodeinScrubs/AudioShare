@@ -188,7 +188,7 @@ if(AUDIOSHARE_COMPANION_APK)
       -File "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/verify_companion_apk.ps1"
       -Apk "${AUDIOSHARE_COMPANION_APK}"
       -ExpectedPackage "com.audioshare.usbcompanion"
-      -MinimumVersionCode 3
+      -ExpectedVersionCode 5
       -ExpectedCertificateSha256 "${AUDIOSHARE_COMPANION_CERT_SHA256}"
     RESULT_VARIABLE COMPANION_VERIFY_RESULT
     OUTPUT_VARIABLE COMPANION_VERIFY_OUTPUT

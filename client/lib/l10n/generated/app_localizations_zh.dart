@@ -54,6 +54,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ignoredAdbDevice => '已忽略：请通过 USB 连接此设备。';
 
   @override
+  String get deviceMetadataUnavailable => 'USB 设备已就绪，但无法读取可选设备信息。';
+
+  @override
+  String get preferencesUnavailable => '无法保存设置。重启后自动重连选项可能会重置。';
+
+  @override
   String get streamingAllSystemAudio => '正在传输全部 Windows 系统音频';
 
   @override

@@ -8,7 +8,7 @@ param(
 
     [Parameter(Mandatory = $true)]
     [ValidateRange(1, [int]::MaxValue)]
-    [int] $MinimumVersionCode,
+    [int] $ExpectedVersionCode,
 
     [Parameter(Mandatory = $true)]
     [string] $ExpectedCertificateSha256
@@ -92,8 +92,8 @@ $actualVersion = 0
 if (-not [int]::TryParse($versionOutput[-1], [ref] $actualVersion)) {
     throw "Invalid companion version code: '$($versionOutput[-1])'."
 }
-if ($actualVersion -lt $MinimumVersionCode) {
-    throw "Companion version code $actualVersion is below required $MinimumVersionCode."
+if ($actualVersion -ne $ExpectedVersionCode) {
+    throw "Wrong companion version code. Expected $ExpectedVersionCode, found $actualVersion."
 }
 
 $debuggableOutput = @(Invoke-CheckedAndroidTool -Tool $apkAnalyzer `

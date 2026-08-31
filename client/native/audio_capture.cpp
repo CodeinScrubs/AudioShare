@@ -123,6 +123,7 @@ std::atomic<uint32_t> g_activeEndpointCount{0};
 std::atomic<uint64_t> g_endpointDroppedFrames{0};
 std::atomic<uint64_t> g_endpointUnderrunFrames{0};
 std::atomic<uint64_t> g_endpointDiscontinuities{0};
+std::atomic<uint64_t> g_captureDiscontinuities{0};
 std::atomic<uint32_t> g_endpointRebuildCount{0};
 std::atomic<uint64_t> g_endpointCatchUpFrames{0};
 std::atomic<uint32_t> g_endpointQueueHighWaterFrames{0};
@@ -859,6 +860,7 @@ HRESULT DrainEndpoint(EndpointCapture* endpoint) {
             &data, &frames, &flags, nullptr, nullptr);
         if (FAILED(result)) break;
         if ((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0) {
+            g_captureDiscontinuities.fetch_add(1);
             g_endpointDiscontinuities.fetch_add(1);
         }
         AppendEndpointPacket(
@@ -1475,6 +1477,9 @@ DWORD WINAPI CaptureThread(LPVOID) {
                 DWORD flags = 0;
                 result = captureClient->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
                 if (FAILED(result)) break;
+                if ((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0) {
+                    g_captureDiscontinuities.fetch_add(1);
+                }
                 const size_t byteCount = static_cast<size_t>(frames) * format.nBlockAlign;
                 if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 || data == nullptr) {
                     EnqueueSilence(byteCount);
@@ -1557,6 +1562,7 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
     g_endpointDroppedFrames.store(0);
     g_endpointUnderrunFrames.store(0);
     g_endpointDiscontinuities.store(0);
+    g_captureDiscontinuities.store(0);
     g_endpointRebuildCount.store(0);
     g_endpointCatchUpFrames.store(0);
     g_endpointQueueHighWaterFrames.store(0);
@@ -1761,6 +1767,10 @@ extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointUnde
 
 extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointDiscontinuities() {
     return static_cast<unsigned long long>(g_endpointDiscontinuities.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetCaptureDiscontinuities() {
+    return static_cast<unsigned long long>(g_captureDiscontinuities.load());
 }
 
 extern "C" __declspec(dllexport) unsigned int AudioCapture_GetEndpointRebuildCount() {

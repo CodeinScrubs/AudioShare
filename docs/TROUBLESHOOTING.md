@@ -22,9 +22,15 @@ EDR, UAC, or organizational security controls.
 - If an app has the expected package/version but its installed base APK does
   not exactly match the one bundled with this Windows build, AudioShare treats
   it as missing. Reinstall the bundled companion; do not bypass this check.
+- If the installed companion is newer than the bundled artifact, update the
+  Windows portable package. AudioShare deliberately does not attempt an Android
+  downgrade because `adb install -r` cannot safely replace a newer version.
 - If the bundled APK is missing, the Windows package is incomplete.
 - If Android rejects installation, capture the exact ADB diagnostic. Do not
   weaken Play Protect or device policy; a signed production APK may be required.
+- If AudioShare reports a different publisher signature, uninstall the existing
+  AudioShare companion from Android Settings and choose **Install companion**
+  again. The host deliberately never uninstalls a phone app without the user.
 - If the package is installed but launch is blocked by device policy or Android
   force-stop state, open the companion once and retry.
 
@@ -32,6 +38,10 @@ EDR, UAC, or organizational security controls.
 
 - A connection phase must finish or fail within a bounded deadline; it must not
   remain at Connecting forever.
+- Three identical failures in one minute deliberately stop automatic retries
+  and show an actionable error. Fix the reported condition, then use **Retry**
+  or reconnect the phone; transient USB failures with a changing fingerprint
+  continue to recover automatically.
 - AudioShare creates one `adb forward --no-rebind tcp:0 localabstract:<nonce>`
   mapping and removes exactly that host port on cleanup.
 - Do not run `adb kill-server` or `forward --remove-all`; another tool may own
@@ -49,6 +59,9 @@ EDR, UAC, or organizational security controls.
 - Open the companion once on Android 13+ to grant notification permission if
   you want its Disconnect action visible; USB playback itself does not wait on
   that dialog.
+- **Disconnect** stops playback for the current cable session but does not
+  erase the remembered phone. Unplug and reconnect the cable to re-enable the
+  normal automatic connection path.
 
 ## 5. Windows source sound
 
@@ -66,6 +79,8 @@ EDR, UAC, or organizational security controls.
   multi-endpoint compatibility mode, endpoint notifications trigger a bounded
   rebuild; the final default-output fallback may require reconnecting AudioShare.
 - Native errors include a numeric code and the failing WASAPI/transport stage.
+- Streaming diagnostics include one capture-discontinuity counter for every
+  capture mode; the compatibility mixer also exposes its per-endpoint counter.
 
 ## 7. Full stream
 

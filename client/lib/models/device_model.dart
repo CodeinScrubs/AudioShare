@@ -16,6 +16,10 @@ class DeviceModel {
   final AdbTransportType transportType;
   final int? transportId;
 
+  /// Non-fatal metadata diagnostic. The device remains selectable when ADB
+  /// cannot read optional properties such as manufacturer or API level.
+  final String? metadataError;
+
   DeviceModel({
     required this.deviceId,
     required this.usb,
@@ -29,6 +33,7 @@ class DeviceModel {
     this.adbState = AdbDeviceState.authorized,
     this.transportType = AdbTransportType.unknown,
     this.transportId,
+    this.metadataError,
   });
 
   bool get connectableUsb =>

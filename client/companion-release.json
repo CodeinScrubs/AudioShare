@@ -1,6 +1,7 @@
 {
   "repository": "CodeinScrubs/AudioShare-Android",
-  "tag": "v1.0.0-rc.1",
-  "asset": "AudioShare-USB-Companion-v1.0.0-rc.1.apk",
+  "tag": "v1.0.0-rc.2",
+  "asset": "AudioShare-USB-Companion-v1.0.0-rc.2.apk",
+  "versionCode": 5,
   "certificateSha256": "23bb6499dbb6aa3610d0a9ee0df9c922d9023e4b7990dc23ac6c1743f215950c"
 }

@@ -108,7 +108,7 @@ jobs:
           .\tools\verify_companion_apk.ps1 `
             -Apk $apk `
             -ExpectedPackage 'com.audioshare.usbcompanion' `
-            -MinimumVersionCode 4 `
+            -ExpectedVersionCode $config.versionCode `
             -ExpectedCertificateSha256 $config.certificateSha256
           "AUDIOSHARE_COMPANION_APK=$apk" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "AUDIOSHARE_COMPANION_CERT_SHA256=$($config.certificateSha256)" |

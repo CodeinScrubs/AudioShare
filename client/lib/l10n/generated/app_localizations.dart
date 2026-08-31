@@ -188,6 +188,18 @@ abstract class AppLocalizations {
   /// **'Ignored: connect this device by USB.'**
   String get ignoredAdbDevice;
 
+  /// No description provided for @deviceMetadataUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'USB device is ready; optional device details are unavailable.'**
+  String get deviceMetadataUnavailable;
+
+  /// No description provided for @preferencesUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings could not be saved. Automatic reconnect choices may reset after restart.'**
+  String get preferencesUnavailable;
+
   /// No description provided for @streamingAllSystemAudio.
   ///
   /// In en, this message translates to:

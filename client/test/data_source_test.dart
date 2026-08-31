@@ -34,7 +34,9 @@ class FakeAdbController implements AdbController {
   final _changes = StreamController<void>.broadcast(sync: true);
   List<DeviceModel> snapshot = [];
   CompanionInstallation? companion = CompanionInstallation.release;
+  Object? companionError;
   Object? validationError;
+  Object? deviceError;
   int validationCalls = 0;
   int deviceCalls = 0;
   int findCompanionCalls = 0;
@@ -42,6 +44,7 @@ class FakeAdbController implements AdbController {
   int createForwardCalls = 0;
   int launchCalls = 0;
   int removeForwardCalls = 0;
+  int companionFailuresRemaining = 0;
   int launchFailuresRemaining = 0;
   bool disposed = false;
   Completer<void>? removeForwardGate;
@@ -64,6 +67,7 @@ class FakeAdbController implements AdbController {
   @override
   Future<List<DeviceModel>> devices() async {
     deviceCalls++;
+    if (deviceError case final error?) throw error;
     return List<DeviceModel>.of(snapshot);
   }
 
@@ -73,6 +77,11 @@ class FakeAdbController implements AdbController {
   @override
   Future<CompanionInstallation?> findCompanion(String deviceId) async {
     findCompanionCalls++;
+    if (companionFailuresRemaining > 0) {
+      companionFailuresRemaining--;
+      throw StateError('injected transient companion check failure');
+    }
+    if (companionError case final error?) throw error;
     return companion;
   }
 
@@ -195,6 +204,8 @@ class FakeAudioCaptureController implements AudioCaptureController {
   int get endpointUnderrunFrames => 0;
   @override
   int get endpointDiscontinuities => 0;
+  @override
+  int get captureDiscontinuities => 0;
   @override
   int get endpointRebuildCount => 0;
   @override
@@ -367,6 +378,24 @@ void main() {
     expect(adb.deviceCalls, 1);
   });
 
+  test('transient ADB refresh failure keeps the last usable screen', () async {
+    adb.snapshot = const [];
+    final dataSource = createSource();
+    await waitUntil(
+      () => dataSource.overallPhase == ConnectionPhase.waitingForPhone,
+    );
+
+    adb.deviceError = StateError('temporary ADB read failure');
+    adb.publish(const []);
+    await waitUntil(
+      () => dataSource.lastError?.type == UiErrorType.adbCommandFailed,
+    );
+
+    expect(dataSource.deviceState, 1);
+    expect(dataSource.overallPhase, ConnectionPhase.waitingForPhone);
+    expect(dataSource.startupFailure, isEmpty);
+  });
+
   test(
     'unauthorized phone automatically continues after the user approves it',
     () async {
@@ -418,6 +447,41 @@ void main() {
       expect(audio.startCalls, 1);
     },
   );
+
+  test(
+    'newer companion is surfaced as a non-retryable host update error',
+    () async {
+      adb
+        ..snapshot = [usbPhone()]
+        ..companionError = const CompanionHostUpdateRequiredException(
+          installedVersionCode: 6,
+          hostVersionCode: 5,
+        );
+      final dataSource = createSource();
+
+      await waitUntil(() => dataSource.overallPhase == ConnectionPhase.failed);
+
+      expect(
+        dataSource.lastError?.exception,
+        isA<CompanionHostUpdateRequiredException>(),
+      );
+      expect(dataSource.getConnectState('USB123'), 0);
+      expect(audio.startCalls, 0);
+    },
+  );
+
+  test('transient companion check failure reconnects automatically', () async {
+    adb
+      ..snapshot = [usbPhone()]
+      ..companionFailuresRemaining = 1;
+    final dataSource = createSource();
+
+    await waitUntil(() => dataSource.overallPhase == ConnectionPhase.streaming);
+
+    expect(adb.findCompanionCalls, 2);
+    expect(dataSource.lastError?.type, UiErrorType.companionCheckFailed);
+    expect(dataSource.takePendingError(), isNull);
+  });
 
   test(
     'a stale native READY callback cannot revive an unplugged session',
@@ -486,6 +550,7 @@ void main() {
 
       dataSource.disconnectDevice('USB123');
       await waitUntil(() => dataSource.getConnectState('USB123') == 0);
+      expect(preferences.lastDeviceId, 'USB123');
       adb.publish([usbPhone()]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(adb.launchCalls, 1);
@@ -518,6 +583,33 @@ void main() {
       expect(adb.createForwardCalls, 2);
       expect(adb.removeForwardCalls, greaterThanOrEqualTo(1));
       expect(dataSource.lastError?.type, UiErrorType.companionLaunchFailed);
+      expect(
+        dataSource.takePendingError(),
+        isNull,
+        reason: 'a recovered automatic retry must not leave a stale modal',
+      );
+    },
+  );
+
+  test(
+    'three identical automatic failures stop retrying and notify the user',
+    () async {
+      adb
+        ..snapshot = [usbPhone()]
+        ..launchFailuresRemaining = 3;
+      final dataSource = createSource(
+        reconnectDelay: const Duration(milliseconds: 1),
+      );
+
+      await waitUntil(
+        () =>
+            dataSource.overallPhase == ConnectionPhase.failed &&
+            dataSource.getConnectState('USB123') == 0,
+      );
+
+      expect(adb.launchCalls, 3);
+      expect(dataSource.takePendingError(), isNotNull);
+      expect(dataSource.overallPhase, ConnectionPhase.failed);
     },
   );
 

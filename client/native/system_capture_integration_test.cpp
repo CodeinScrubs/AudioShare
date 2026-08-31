@@ -308,6 +308,8 @@ int main(int argc, char** argv) {
         library, "AudioCapture_GetEndpointUnderrunFrames");
     const auto getEndpointDiscontinuities = LoadFunction<AudioCaptureGetUint64>(
         library, "AudioCapture_GetEndpointDiscontinuities");
+    const auto getCaptureDiscontinuities = LoadFunction<AudioCaptureGetUint64>(
+        library, "AudioCapture_GetCaptureDiscontinuities");
     const auto getEndpointRebuildCount = LoadFunction<AudioCaptureGetUint32>(
         library, "AudioCapture_GetEndpointRebuildCount");
     if (initialize == nullptr || connect == nullptr || start == nullptr ||
@@ -318,6 +320,7 @@ int main(int argc, char** argv) {
         getEndpointDroppedFrames == nullptr ||
         getEndpointUnderrunFrames == nullptr ||
         getEndpointDiscontinuities == nullptr ||
+        getCaptureDiscontinuities == nullptr ||
         getEndpointRebuildCount == nullptr) {
         std::fprintf(stderr, "The DLL does not expose the expected Windows API\n");
         return 1;
@@ -410,12 +413,13 @@ int main(int argc, char** argv) {
                 "host_dropped_chunks=%llu active_endpoint_count=%u "
                 "endpoint_dropped_frames=%llu "
                 "endpoint_underrun_frames=%llu endpoint_discontinuities=%llu "
-                "endpoint_rebuilds=%u\n",
+                "capture_discontinuities=%llu endpoint_rebuilds=%u\n",
                 static_cast<unsigned long long>(droppedChunks),
                 getActiveEndpointCount(),
                 endpointDroppedFrames,
                 getEndpointUnderrunFrames(),
                 getEndpointDiscontinuities(),
+                getCaptureDiscontinuities(),
                 getEndpointRebuildCount());
             if ((expectedMode == 0 || mode == expectedMode) &&
                 (!requirePcm || pcmBytes > 0) &&

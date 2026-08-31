@@ -100,6 +100,7 @@ abstract interface class AudioCaptureController {
   int get endpointDroppedFrames;
   int get endpointUnderrunFrames;
   int get endpointDiscontinuities;
+  int get captureDiscontinuities;
   int get endpointRebuildCount;
   int get endpointCatchUpFrames;
   int get endpointQueueHighWaterFrames;
@@ -170,6 +171,7 @@ class AudioCaptureService implements AudioCaptureController {
   AudioCaptureGetDroppedChunksDart? _getEndpointDroppedFrames;
   AudioCaptureGetDroppedChunksDart? _getEndpointUnderrunFrames;
   AudioCaptureGetDroppedChunksDart? _getEndpointDiscontinuities;
+  AudioCaptureGetDroppedChunksDart? _getCaptureDiscontinuities;
   AudioCaptureGetUint32Dart? _getEndpointRebuildCount;
   AudioCaptureGetDroppedChunksDart? _getEndpointCatchUpFrames;
   AudioCaptureGetUint32Dart? _getEndpointQueueHighWaterFrames;
@@ -320,6 +322,11 @@ class AudioCaptureService implements AudioCaptureController {
             AudioCaptureGetDroppedChunksNative,
             AudioCaptureGetDroppedChunksDart
           >('AudioCapture_GetEndpointDiscontinuities');
+      _getCaptureDiscontinuities = _lib!
+          .lookupFunction<
+            AudioCaptureGetDroppedChunksNative,
+            AudioCaptureGetDroppedChunksDart
+          >('AudioCapture_GetCaptureDiscontinuities');
       _getEndpointRebuildCount = _lib!
           .lookupFunction<
             AudioCaptureGetUint32Native,
@@ -347,7 +354,10 @@ class AudioCaptureService implements AudioCaptureController {
   @override
   bool initialize() {
     if (_initialized) return true;
-    if (_initialize == null) return false;
+    // A partial export lookup must fail before any native state is created.
+    // Otherwise initialization could succeed and the first missing function
+    // would surface later as an opaque transport failure.
+    if (_libraryLoadError != null || _initialize == null) return false;
     _initialized = _initialize!() != 0;
     return _initialized;
   }
@@ -440,6 +450,8 @@ class AudioCaptureService implements AudioCaptureController {
   @override
   int get endpointDiscontinuities => _getEndpointDiscontinuities?.call() ?? 0;
   @override
+  int get captureDiscontinuities => _getCaptureDiscontinuities?.call() ?? 0;
+  @override
   int get endpointRebuildCount => _getEndpointRebuildCount?.call() ?? 0;
   @override
   int get endpointCatchUpFrames => _getEndpointCatchUpFrames?.call() ?? 0;
@@ -460,9 +472,10 @@ class AudioCaptureService implements AudioCaptureController {
     String fallbackMessage = 'Unknown audio capture error',
   }) {
     if (_libraryLoadError != null) {
-      final message = _libraryLoadError!;
-      _libraryLoadError = null;
-      return AudioCaptureError(-1000, message);
+      // Loading/export failure is structural, not a consumable native runtime
+      // error. Keep it persistent so an automatic retry cannot initialize a
+      // partially resolved, ABI-incompatible DLL after the UI reads it once.
+      return AudioCaptureError(-1000, _libraryLoadError!);
     }
 
     final code = _getLastErrorCode?.call() ?? 0;

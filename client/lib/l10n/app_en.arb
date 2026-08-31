@@ -15,6 +15,8 @@
   "usbUnauthorized": "Unlock the phone and approve USB debugging.",
   "usbOffline": "USB device is offline. Reconnect the cable.",
   "ignoredAdbDevice": "Ignored: connect this device by USB.",
+  "deviceMetadataUnavailable": "USB device is ready; optional device details are unavailable.",
+  "preferencesUnavailable": "Settings could not be saved. Automatic reconnect choices may reset after restart.",
   "streamingAllSystemAudio": "Streaming all Windows system audio",
   "streamingGlobalSystemAudio": "Streaming all Windows audio (global mode)",
   "streamingMultiOutputAudio": "Streaming all active Windows outputs ({count} endpoints)",

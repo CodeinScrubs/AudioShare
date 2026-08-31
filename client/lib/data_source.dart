@@ -80,6 +80,15 @@ class _ConnectionFailure implements Exception {
   final UiError error;
 }
 
+class _RetryFailureWindow {
+  _RetryFailureWindow({required this.fingerprint, required this.firstSeen})
+    : count = 1;
+
+  final String fingerprint;
+  final DateTime firstSeen;
+  int count;
+}
+
 class DataSource extends ChangeNotifier {
   DataSource({
     AdbController? adb,
@@ -87,7 +96,11 @@ class DataSource extends ChangeNotifier {
     ConnectionPreferences? preferences,
     Duration pollInterval = const Duration(seconds: 15),
     Duration connectionTimeout = const Duration(seconds: 15),
-    Duration captureStartupTimeout = const Duration(seconds: 5),
+    // Native process-loopback activation has its own five-second feature
+    // probe before compatibility fallback. Give that probe and endpoint
+    // construction a separate bounded budget so a slow-but-valid fallback is
+    // not torn down by the Dart supervisor mid-startup.
+    Duration captureStartupTimeout = const Duration(seconds: 15),
     Duration reconnectBaseDelay = const Duration(seconds: 1),
     Duration reconnectMaxDelay = const Duration(seconds: 15),
     bool enableBackgroundTimers = true,
@@ -121,6 +134,7 @@ class DataSource extends ChangeNotifier {
 
   List<DeviceModel> _devices = [];
   final Map<String, int> _connectStateMap = {};
+  final Map<String, _RetryFailureWindow> _retryFailureWindows = {};
   final Map<String, ConnectionPhase> _phaseMap = {};
   final Set<String> _missingCompanionDeviceIds = {};
   final Set<String> _installingCompanionDeviceIds = {};
@@ -187,6 +201,7 @@ class DataSource extends ChangeNotifier {
   int get endpointDroppedFrames => _audioCapture.endpointDroppedFrames;
   int get endpointUnderrunFrames => _audioCapture.endpointUnderrunFrames;
   int get endpointDiscontinuities => _audioCapture.endpointDiscontinuities;
+  int get captureDiscontinuities => _audioCapture.captureDiscontinuities;
   int get endpointRebuildCount => _audioCapture.endpointRebuildCount;
   int get endpointCatchUpFrames => _audioCapture.endpointCatchUpFrames;
   int get endpointQueueHighWaterFrames =>
@@ -233,6 +248,7 @@ class DataSource extends ChangeNotifier {
       'endpoint_dropped_frames=$endpointDroppedFrames',
       'endpoint_underrun_frames=$endpointUnderrunFrames',
       'endpoint_discontinuities=$endpointDiscontinuities',
+      'capture_discontinuities=$captureDiscontinuities',
       'endpoint_rebuilds=$endpointRebuildCount',
     ].join('\n');
   }
@@ -335,6 +351,9 @@ class DataSource extends ChangeNotifier {
       final devices = await _adb.devices();
       if (_disposed) return;
       _devices = devices;
+      _retryFailureWindows.removeWhere(
+        (deviceId, _) => !devices.any((device) => device.deviceId == deviceId),
+      );
       _deviceState = devices.isEmpty ? 1 : 2;
       _startupFailure = '';
       _manuallySuppressedDeviceIds.removeWhere(
@@ -381,10 +400,14 @@ class DataSource extends ChangeNotifier {
           ),
         );
       } else {
-        if (_activeSessionDeviceId == null) {
-          _deviceState = 3;
-          _overallPhase = ConnectionPhase.failed;
-          _startupFailure = error.toString();
+        // Keep the last known device snapshot during a transient refresh
+        // failure. Showing the package-validation screen here is misleading
+        // and can hide a healthy phone just because one ADB poll failed.
+        // The queued ADB error remains actionable while the tracker/polling
+        // path retries in the background.
+        if (_deviceState == 0) {
+          _deviceState = 1;
+          _overallPhase = ConnectionPhase.waitingForPhone;
         }
         _queueError(
           UiError(
@@ -554,6 +577,7 @@ class DataSource extends ChangeNotifier {
 
   void connectDevice(String deviceId) {
     _manuallySuppressedDeviceIds.remove(deviceId);
+    _retryFailureWindows.remove(deviceId);
     unawaited(_connectDevice(deviceId, automatic: false));
   }
 
@@ -608,10 +632,16 @@ class DataSource extends ChangeNotifier {
     } catch (error, stack) {
       debugPrint('Connection failed: $error\n$stack');
       if (generation == _sessionGeneration) {
+        final uiError = _connectionError(deviceId, error);
         await _failConnection(
           generation,
-          _connectionError(deviceId, error),
-          retryAutomatically: true,
+          uiError,
+          // A newer companion cannot be repaired by repeatedly retrying the
+          // same older host artifact. Keep the actionable update error visible
+          // instead of creating an endless install/reconnect loop.
+          retryAutomatically:
+              error is! CompanionHostUpdateRequiredException &&
+              _isRetryableConnectionError(uiError),
         );
       }
     } finally {
@@ -636,6 +666,15 @@ class DataSource extends ChangeNotifier {
     };
     return UiError(type: type, phase: phase, exception: error);
   }
+
+  bool _isRetryableConnectionError(UiError error) => switch (error.type) {
+    // These represent a broken local artifact or a user-selected repair step;
+    // retrying them automatically only repeats the same failure.
+    UiErrorType.packageValidationFailed ||
+    UiErrorType.companionInstallFailed ||
+    UiErrorType.captureInitializationFailed => false,
+    _ => true,
+  };
 
   Future<void> _connectWindowsCompanion(String deviceId, int generation) async {
     _setSessionPhase(deviceId, ConnectionPhase.checkingCompanion);
@@ -825,6 +864,7 @@ class DataSource extends ChangeNotifier {
         _lastAutoDeviceId = deviceId;
         _connectingDeviceId = null;
         _reconnectAttempt = 0;
+        _retryFailureWindows.remove(deviceId);
         if (!_disposed) notifyListeners();
         return;
       }
@@ -859,10 +899,17 @@ class DataSource extends ChangeNotifier {
   }) async {
     if (_disposed || generation != _sessionGeneration) return;
     final deviceId = _activeSessionDeviceId ?? _phaseMap.keys.firstOrNull;
+    final requestedRetry = retryAutomatically && _lastCheck && deviceId != null;
+    final circuitTripped =
+        requestedRetry && _recordRetryFailure(deviceId, error);
+    final willRetry = requestedRetry && !circuitTripped;
     _sessionGeneration++;
     _connectingDeviceId = null;
-    _queueError(error);
-    final willRetry = retryAutomatically && _lastCheck && deviceId != null;
+    // Keep the failure in diagnostics, but do not leave a modal dialog over a
+    // session that the supervisor is already repairing. Terminal failures
+    // still notify the user immediately.
+    _queueError(error, notifyUser: !willRetry);
+    if (circuitTripped) _reconnectAttempt = 0;
     if (willRetry) _lastAutoDeviceId = '';
     await _cleanupSession(
       forgetRememberedDevice: false,
@@ -873,6 +920,29 @@ class DataSource extends ChangeNotifier {
     );
     if (willRetry && !_disposed) _scheduleReconnect(deviceId);
     if (!_disposed) notifyListeners();
+  }
+
+  bool _recordRetryFailure(String deviceId, UiError error) {
+    final fingerprint = [
+      error.type.name,
+      error.phase?.name ?? '',
+      error.nativeError?.code.toString() ?? '',
+      error.nativeError?.message ?? '',
+      error.exception?.toString() ?? '',
+    ].join('|');
+    final now = DateTime.now();
+    final previous = _retryFailureWindows[deviceId];
+    if (previous == null ||
+        previous.fingerprint != fingerprint ||
+        now.difference(previous.firstSeen) > const Duration(seconds: 60)) {
+      _retryFailureWindows[deviceId] = _RetryFailureWindow(
+        fingerprint: fingerprint,
+        firstSeen: now,
+      );
+      return false;
+    }
+    previous.count++;
+    return previous.count >= 3;
   }
 
   void _scheduleReconnect(String deviceId) {
@@ -972,9 +1042,13 @@ class DataSource extends ChangeNotifier {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _reconnectAttempt = 0;
+    _retryFailureWindows.remove(deviceId);
     unawaited(
       _cleanupSession(
-        forgetRememberedDevice: true,
+        // Disconnect means stop this session. Keep the preferred phone so a
+        // later restart still knows which authorized device to select; the
+        // per-cable suppression above prevents an immediate reconnect.
+        forgetRememberedDevice: false,
         finalPhase: ConnectionPhase.phoneReady,
         targetDeviceId: deviceId,
       ).whenComplete(() {

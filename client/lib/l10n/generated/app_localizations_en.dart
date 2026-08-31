@@ -54,6 +54,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ignoredAdbDevice => 'Ignored: connect this device by USB.';
 
   @override
+  String get deviceMetadataUnavailable =>
+      'USB device is ready; optional device details are unavailable.';
+
+  @override
+  String get preferencesUnavailable =>
+      'Settings could not be saved. Automatic reconnect choices may reset after restart.';
+
+  @override
   String get streamingAllSystemAudio => 'Streaming all Windows system audio';
 
   @override

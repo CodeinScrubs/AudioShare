@@ -4,6 +4,14 @@ Stream **all Windows system audio** to an Android phone speaker over a USB ADB
 connection. This fork is being specialized for a portable, standard-user,
 firewall-independent Windows workflow.
 
+## Download and use it
+
+For non-developers, start with the [beginner guide](docs/GETTING_STARTED.md).
+The release page publishes one standalone Windows ZIP containing the EXE,
+bundled ADB, and matching companion APK:
+
+[Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.2)
+
 Development status: the Android companion passes clean unit, lint, debug, and
 permanently signed release builds. A
 real Android 16 emulator passed a cold-install, authenticated
@@ -12,7 +20,8 @@ exact cleanup. Headless virtual audio can underrun, so the current Android
 hardening pass treats zero-drop timing as a physical-device gate. The Windows
 capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
-non-zero PCM. Flutter analysis and 20 supervisor/lifecycle/security tests pass.
+non-zero PCM. Flutter analysis and 31 supervisor/lifecycle/security/persistence
+tests pass.
 The complete audible path is now hardware tested on a Samsung Galaxy A52s with
 Android 14: global-system capture, a 10 ms host queue high-water mark, and zero
 visible host/Android drops in the initial run. Screen-off endurance, repeated
@@ -64,6 +73,8 @@ mirrored-output suppression still require target-hardware evidence.
 7. After installation, the host verifies that the installed base APK exactly
    matches the bundled artifact, launches it, creates the USB-local transport,
    authenticates it, and starts capture automatically.
+   If the phone already has a newer companion than this portable host supports,
+   AudioShare asks for a newer Windows build instead of attempting a downgrade.
 8. Confirm that system audio plays through the phone and leave automatic
    connection enabled.
 
@@ -79,9 +90,15 @@ driver can require administrator access and is outside AudioShare's control.
 Once the Windows host is open, the intended workflow requires no Android UI, IP
 address, Wi-Fi, Internet, firewall approval, or Connect click. Automatic Windows
 startup and tray UI are not implemented yet. The zero-click USB supervisor is
-unit tested but not yet verified across a target-phone reconnect. A deliberate **Disconnect** stays
-disconnected while the current cable session remains; unplug/replug restores the
-normal automatic path.
+unit tested but not yet verified across a target-phone reconnect. A deliberate
+**Disconnect** stops the current session but keeps the preferred phone
+remembered; it stays disconnected while that cable session remains, and
+unplug/replug restores the normal automatic path.
+
+If the same failure happens three times in one minute, automatic retries stop
+and AudioShare shows the exact error with a manual retry path. This prevents a
+permanent “Connecting” loop for broken packages, unsupported capture, or a
+device policy that cannot recover by itself.
 
 ## Build from source
 
@@ -96,11 +113,11 @@ flutter test
 flutter build windows --debug
 ```
 
-Debug builds bundle the clearly labeled version-code 4 debug companion APK. A
+Debug builds bundle the clearly labeled version-code 5 debug companion APK. A
 distributable release must use a stable signing key and provide both the signed
 APK and its pinned signer-certificate SHA-256 explicitly. Configuration fails
 unless Android SDK `apkanalyzer` and `apksigner` confirm the signature, exact
-certificate, package ID, and compatible version:
+certificate, package ID, and exact host-compatible version:
 
 ```powershell
 $env:AUDIOSHARE_COMPANION_APK = 'C:\absolute\path\audioshare-companion.apk'
