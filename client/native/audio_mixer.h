@@ -16,11 +16,11 @@ inline int16_t AverageMixedSample(int32_t sum, uint32_t contributors) {
     int32_t value = sum >= 0
         ? (sum + half) / static_cast<int32_t>(contributors)
         : (sum - half) / static_cast<int32_t>(contributors);
-    if (value > std::numeric_limits<int16_t>::max()) {
-        value = std::numeric_limits<int16_t>::max();
+    if (value > (std::numeric_limits<int16_t>::max)()) {
+        value = (std::numeric_limits<int16_t>::max)();
     }
-    if (value < std::numeric_limits<int16_t>::min()) {
-        value = std::numeric_limits<int16_t>::min();
+    if (value < (std::numeric_limits<int16_t>::min)()) {
+        value = (std::numeric_limits<int16_t>::min)();
     }
     return static_cast<int16_t>(value);
 }
