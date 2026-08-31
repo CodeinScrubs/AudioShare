@@ -515,3 +515,20 @@ This checkpoint proves source, package, and local Windows integration quality.
 It does not replace the remaining physical-device promotion gates: repeated
 unplug/replug recovery, ten-minute screen-off playback, measured latency,
 restricted-PC behavior, and two-hour endurance.
+
+After the tag workflow completed, the public prerelease was downloaded again
+through its normal GitHub asset URL without relying on the local build. Its
+published sidecar checksum matched the downloaded ZIP, anonymous HTTP access
+returned 200, and fresh extraction passed the same bundle validator. The public
+AOT binary contains the exact creator credit, and the signed companion plus
+beginner/AI-assistant guides are present:
+
+```text
+AudioShare-USB-Windows-v3.0.0-rc.3.zip
+public SHA-256=12c2089874df823eea4004c0fb05a0e6a3f071817d6b029ecca89d5850eecfc4
+WINDOWS_BUNDLE_OK files=32
+```
+
+The public CI ZIP and local ZIP need not be byte-identical because archive
+metadata and builder output can vary. Each published ZIP's adjacent `.sha256`
+file and internal `SHA256SUMS.txt` are the authoritative integrity records.
