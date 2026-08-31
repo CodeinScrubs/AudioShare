@@ -93,7 +93,7 @@ jobs:
           if ($package -cne 'com.audioshare.usbcompanion.debug') {
             throw "Wrong Debug companion package: '$package'."
           }
-          if ([int] $version -ne 5) {
+          if ([int] $version -ne 6) {
             throw "Wrong Debug companion version code: '$version'."
           }
 
@@ -111,7 +111,7 @@ jobs:
             .\tools\verify_companion_apk.ps1 `
               -Apk $env:AUDIOSHARE_COMPANION_APK `
               -ExpectedPackage 'com.audioshare.usbcompanion' `
-              -ExpectedVersionCode 5 `
+              -ExpectedVersionCode 6 `
               -ExpectedCertificateSha256 ('0' * 64)
             $accepted = $true
           } catch {
@@ -128,13 +128,13 @@ jobs:
           .\tools\new_ci_companion_fixture.ps1 `
             -OutputDirectory $directory `
             -GithubEnvironmentFile '' `
-            -VersionCode 6
+            -VersionCode 7
           $accepted = $false
           try {
             .\tools\verify_companion_apk.ps1 `
               -Apk (Join-Path $directory 'companion-ci-signed.apk') `
               -ExpectedPackage 'com.audioshare.usbcompanion' `
-              -ExpectedVersionCode 5 `
+              -ExpectedVersionCode 6 `
               -ExpectedCertificateSha256 ('0' * 64)
             $accepted = $true
           } catch {

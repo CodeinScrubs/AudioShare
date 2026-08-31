@@ -74,6 +74,49 @@ class UiError {
   final Object? exception;
 }
 
+enum FailureDisposition { transient, needsUserAction, environmental, fatal }
+
+/// Decides whether repeating the exact same operation can reasonably repair a
+/// failure. Unknown failures remain transient so a new OEM/ADB message does not
+/// accidentally disable recovery; known policy, compatibility, and local
+/// package failures stop and remain visible to the user.
+FailureDisposition classifyFailure(UiError error) {
+  if (error.exception is CompanionHostUpdateRequiredException ||
+      error.exception is CompanionReplacementRequiredException) {
+    return FailureDisposition.fatal;
+  }
+  switch (error.type) {
+    case UiErrorType.packageValidationFailed:
+    case UiErrorType.companionInstallFailed:
+    case UiErrorType.captureInitializationFailed:
+      return FailureDisposition.fatal;
+    default:
+      break;
+  }
+  final details = [
+    error.nativeError?.message ?? '',
+    error.exception?.toString() ?? '',
+  ].join(' ').toLowerCase();
+  if (details.contains('authentication') ||
+      details.contains('protocol version') ||
+      details.contains('unsupported protocol') ||
+      details.contains('signature') ||
+      details.contains('apk sha-256')) {
+    return FailureDisposition.fatal;
+  }
+  if (details.contains('audio focus')) {
+    return FailureDisposition.needsUserAction;
+  }
+  if (details.contains('built-in speaker') ||
+      details.contains('phone speaker route') ||
+      details.contains('routed pc audio') ||
+      details.contains('no active render') ||
+      details.contains('no usable windows audio')) {
+    return FailureDisposition.environmental;
+  }
+  return FailureDisposition.transient;
+}
+
 class _ConnectionFailure implements Exception {
   const _ConnectionFailure(this.error);
 
@@ -167,6 +210,8 @@ class DataSource extends ChangeNotifier {
   AdbForwardSession? _forwardSession;
   WindowsCaptureMode _lastNotifiedCaptureMode = WindowsCaptureMode.inactive;
   int _lastNotifiedActiveEndpointCount = 0;
+  int _lastNotifiedMediaVolume = -1;
+  int _lastNotifiedMediaVolumeMax = -1;
 
   List<DeviceModel> get devices => _devices;
   int get deviceState => _deviceState;
@@ -191,6 +236,14 @@ class DataSource extends ChangeNotifier {
   int get androidMediaVolumeMax => _audioCapture.androidMediaVolumeMax;
   int get androidQueueHighWaterFrames =>
       _audioCapture.androidQueueHighWaterFrames;
+  int get androidWrittenFrames => _audioCapture.androidWrittenFrames;
+  int get androidPlaybackHeadFrames => _audioCapture.androidPlaybackHeadFrames;
+  int get androidLastWriteProgressAgeMilliseconds =>
+      _audioCapture.androidLastWriteProgressAgeMilliseconds;
+  int get androidLastPlaybackAdvanceAgeMilliseconds =>
+      _audioCapture.androidLastPlaybackAdvanceAgeMilliseconds;
+  int get androidPlayState => _audioCapture.androidPlayState;
+  int get androidPerformanceMode => _audioCapture.androidPerformanceMode;
   int get hostQueueFrames => _audioCapture.hostQueueFrames;
   int get hostQueueHighWaterFrames => _audioCapture.hostQueueHighWaterFrames;
   int get transportBytesSent => _audioCapture.transportBytesSent;
@@ -206,6 +259,11 @@ class DataSource extends ChangeNotifier {
   int get endpointCatchUpFrames => _audioCapture.endpointCatchUpFrames;
   int get endpointQueueHighWaterFrames =>
       _audioCapture.endpointQueueHighWaterFrames;
+  int get capturedFrames => _audioCapture.capturedFrames;
+  int get capturePeakPermille => _audioCapture.capturePeakPermille;
+  int get captureRmsPermille => _audioCapture.captureRmsPermille;
+  int get lastNonSilentAgeMilliseconds =>
+      _audioCapture.lastNonSilentAgeMilliseconds;
 
   String get streamingDiagnostics {
     const sampleRate = 48000;
@@ -236,6 +294,12 @@ class DataSource extends ChangeNotifier {
       'android_queue_chunks=$androidQueueDepth',
       'android_queue_frames=$androidQueueFrames (${milliseconds(androidQueueFrames)} ms)',
       'android_queue_high_water_frames=$androidQueueHighWaterFrames (${milliseconds(androidQueueHighWaterFrames)} ms)',
+      'android_written_frames=$androidWrittenFrames',
+      'android_playback_head_frames=$androidPlaybackHeadFrames',
+      'android_last_write_progress_age_ms=$androidLastWriteProgressAgeMilliseconds',
+      'android_last_playback_advance_age_ms=$androidLastPlaybackAdvanceAgeMilliseconds',
+      'android_play_state=$androidPlayState',
+      'android_performance_mode=$androidPerformanceMode',
       'android_buffer_frames=$androidBufferFrames (${milliseconds(androidBufferFrames)} ms)',
       'android_buffer_capacity_frames=$androidBufferCapacityFrames (${milliseconds(androidBufferCapacityFrames)} ms)',
       'android_start_threshold_frames=$androidStartThresholdFrames (${milliseconds(androidStartThresholdFrames)} ms)',
@@ -250,6 +314,11 @@ class DataSource extends ChangeNotifier {
       'endpoint_discontinuities=$endpointDiscontinuities',
       'capture_discontinuities=$captureDiscontinuities',
       'endpoint_rebuilds=$endpointRebuildCount',
+      'captured_frames=$capturedFrames',
+      'capture_peak_permille=$capturePeakPermille',
+      'capture_rms_permille=$captureRmsPermille',
+      'last_non_silent_age_ms=${lastNonSilentAgeMilliseconds == 0xFFFFFFFF ? 'never' : lastNonSilentAgeMilliseconds}',
+      ..._adb.diagnosticLines,
     ].join('\n');
   }
 
@@ -547,10 +616,16 @@ class DataSource extends ChangeNotifier {
     if (error == null) {
       final mode = _audioCapture.captureMode;
       final activeEndpointCount = _audioCapture.activeEndpointCount;
+      final mediaVolume = _audioCapture.androidMediaVolume;
+      final mediaVolumeMax = _audioCapture.androidMediaVolumeMax;
       if (mode != _lastNotifiedCaptureMode ||
-          activeEndpointCount != _lastNotifiedActiveEndpointCount) {
+          activeEndpointCount != _lastNotifiedActiveEndpointCount ||
+          mediaVolume != _lastNotifiedMediaVolume ||
+          mediaVolumeMax != _lastNotifiedMediaVolumeMax) {
         _lastNotifiedCaptureMode = mode;
         _lastNotifiedActiveEndpointCount = activeEndpointCount;
+        _lastNotifiedMediaVolume = mediaVolume;
+        _lastNotifiedMediaVolumeMax = mediaVolumeMax;
         if (!_disposed) notifyListeners();
       }
       return;
@@ -639,9 +714,7 @@ class DataSource extends ChangeNotifier {
           // A newer companion cannot be repaired by repeatedly retrying the
           // same older host artifact. Keep the actionable update error visible
           // instead of creating an endless install/reconnect loop.
-          retryAutomatically:
-              error is! CompanionHostUpdateRequiredException &&
-              _isRetryableConnectionError(uiError),
+          retryAutomatically: true,
         );
       }
     } finally {
@@ -666,15 +739,6 @@ class DataSource extends ChangeNotifier {
     };
     return UiError(type: type, phase: phase, exception: error);
   }
-
-  bool _isRetryableConnectionError(UiError error) => switch (error.type) {
-    // These represent a broken local artifact or a user-selected repair step;
-    // retrying them automatically only repeats the same failure.
-    UiErrorType.packageValidationFailed ||
-    UiErrorType.companionInstallFailed ||
-    UiErrorType.captureInitializationFailed => false,
-    _ => true,
-  };
 
   Future<void> _connectWindowsCompanion(String deviceId, int generation) async {
     _setSessionPhase(deviceId, ConnectionPhase.checkingCompanion);
@@ -899,7 +963,11 @@ class DataSource extends ChangeNotifier {
   }) async {
     if (_disposed || generation != _sessionGeneration) return;
     final deviceId = _activeSessionDeviceId ?? _phaseMap.keys.firstOrNull;
-    final requestedRetry = retryAutomatically && _lastCheck && deviceId != null;
+    final requestedRetry =
+        retryAutomatically &&
+        classifyFailure(error) == FailureDisposition.transient &&
+        _lastCheck &&
+        deviceId != null;
     final circuitTripped =
         requestedRetry && _recordRetryFailure(deviceId, error);
     final willRetry = requestedRetry && !circuitTripped;

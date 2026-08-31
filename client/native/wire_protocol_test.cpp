@@ -103,6 +103,23 @@ int main() {
     assert(!DecodePlaybackStats(
         enhancedStatsBytes.data(), enhancedStatsBytes.size() - 1, &stats));
 
+    std::array<uint8_t, kPlaybackProgressStatsBytes> progressStatsBytes{};
+    for (size_t index = 0; index < progressStatsBytes.size() / 4; ++index) {
+        WriteU32(
+            progressStatsBytes.data() + index * 4,
+            static_cast<uint32_t>(index + 1));
+    }
+    assert(DecodePlaybackStats(
+        progressStatsBytes.data(), progressStatsBytes.size(), &stats));
+    assert(stats.queueHighWaterFrames == 15);
+    assert(stats.writtenFrames == 0x0000001000000011ULL);
+    assert(stats.playbackHeadFrames == 0x0000001200000013ULL);
+    assert(stats.lastWriteProgressAgeMilliseconds == 20);
+    assert(stats.lastPlaybackAdvanceAgeMilliseconds == 21);
+    assert(stats.playState == 22 && stats.performanceMode == 23);
+    assert(!DecodePlaybackStats(
+        progressStatsBytes.data(), progressStatsBytes.size() - 1, &stats));
+
     std::cout << "Wire protocol tests passed\n";
     return 0;
 }

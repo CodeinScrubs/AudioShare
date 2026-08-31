@@ -26,6 +26,8 @@
     }
   },
   "streamingDefaultOutputAudio": "正在传输 Windows 默认输出（最终兼容回退）",
+  "phoneMediaVolumeMuted": "手机媒体音量已静音",
+  "phoneMediaVolumeLow": "手机媒体音量很低",
   "phaseCheckingAdb": "正在检查 USB 和 ADB",
   "phaseCheckingCompanion": "正在检查 Android 配套应用",
   "phaseCreatingForward": "正在创建 USB 传输",

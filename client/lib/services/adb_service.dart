@@ -10,8 +10,50 @@ const _companionLaunchAction = 'com.audioshare.usbcompanion.LAUNCH_SESSION';
 // Keep this synchronized with the companion artifact accepted by the
 // release workflow. A newer phone-side companion must never be silently
 // downgraded by an older portable host.
-const bundledCompanionVersionCode = 5;
+const bundledCompanionVersionCode = 6;
 const minimumCompanionVersionCode = bundledCompanionVersionCode;
+const _forwardJournalOwner = 'CodeinScrubs.AudioShare';
+const _forwardJournalVersion = 1;
+
+Map<String, String> parseAdbServerStatus(String output) {
+  final values = <String, String>{};
+  for (final rawLine in const LineSplitter().convert(output)) {
+    final line = rawLine.trim();
+    final separator = line.indexOf(':');
+    if (separator <= 0) continue;
+    final key = line.substring(0, separator).trim();
+    final value = line.substring(separator + 1).trim();
+    if (RegExp(r'^[a-z][a-z0-9_]*$').hasMatch(key) && value.isNotEmpty) {
+      values[key] = value;
+    }
+  }
+  return values;
+}
+
+Future<String> _collectBoundedText(
+  Stream<List<int>> source, {
+  int maximumCharacters = 16 * 1024,
+}) async {
+  final output = StringBuffer();
+  var remaining = maximumCharacters;
+  await for (final text in source.transform(
+    const Utf8Decoder(allowMalformed: true),
+  )) {
+    if (remaining <= 0) continue;
+    final accepted = text.length <= remaining
+        ? text
+        : text.substring(0, remaining);
+    output.write(accepted);
+    remaining -= accepted.length;
+  }
+  if (remaining <= 0) output.write('\n<output truncated>');
+  return output.toString();
+}
+
+String _diagnosticValue(Object? value) {
+  final normalized = value?.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  return normalized == null || normalized.isEmpty ? 'none' : normalized;
+}
 
 class CompanionHostUpdateRequiredException implements Exception {
   const CompanionHostUpdateRequiredException({
@@ -315,6 +357,7 @@ class AdbForwardSession {
 /// or mutating the user's ambient ADB server.
 abstract interface class AdbController {
   String get executablePath;
+  List<String> get diagnosticLines;
 
   Future<void> validateRuntime();
   Future<List<DeviceModel>> devices();
@@ -346,24 +389,59 @@ class AdbService implements AdbController {
     AdbCommandRunner? runner,
     String? adbPath,
     String? companionDirectoryPath,
+    String? forwardJournalPath,
   }) : _runner = runner ?? ProcessAdbCommandRunner(),
        _adbPath = adbPath ?? _defaultAdbPath(),
-       _companionDirectoryPath = companionDirectoryPath;
+       _companionDirectoryPath = companionDirectoryPath,
+       _forwardJournalPath = forwardJournalPath ?? _defaultForwardJournalPath();
 
   final AdbCommandRunner _runner;
   final String _adbPath;
   final String? _companionDirectoryPath;
+  final String _forwardJournalPath;
   final Map<String, DeviceModel> _deviceCache = {};
   bool _disposed = false;
   Process? _deviceTrackerProcess;
+  bool _trackerHealthy = false;
+  int _trackerRestartCount = 0;
+  int? _trackerLastExitCode;
+  String _trackerLastError = '';
+  String _forwardJournalStatus = 'not_checked';
+  Map<String, String> _adbServerStatus = const {};
+  String _adbServerStatusError = 'not_checked';
+  Future<void>? _forwardRecovery;
+  bool _forwardRecoveryCompleted = false;
 
   static String _defaultAdbPath() {
     final executableDirectory = File(Platform.resolvedExecutable).parent.path;
     return '$executableDirectory${Platform.pathSeparator}adb.exe';
   }
 
+  static String _defaultForwardJournalPath() {
+    final base =
+        Platform.environment['LOCALAPPDATA'] ?? Directory.systemTemp.path;
+    return '$base${Platform.pathSeparator}CodeinScrubs'
+        '${Platform.pathSeparator}AudioShare'
+        '${Platform.pathSeparator}adb-forward-journal.json';
+  }
+
   @override
   String get executablePath => _adbPath;
+
+  @override
+  List<String> get diagnosticLines => [
+    'adb_tracker_healthy=$_trackerHealthy',
+    'adb_tracker_restarts=$_trackerRestartCount',
+    'adb_tracker_last_exit=${_trackerLastExitCode ?? 'none'}',
+    'adb_tracker_last_error=${_diagnosticValue(_trackerLastError)}',
+    'adb_forward_journal=$_forwardJournalStatus',
+    if (_adbServerStatus.isNotEmpty)
+      ..._adbServerStatus.entries.map(
+        (entry) => 'adb_server_${entry.key}=${_diagnosticValue(entry.value)}',
+      )
+    else
+      'adb_server_status=${_diagnosticValue(_adbServerStatusError)}',
+  ];
 
   Future<AdbCommandResult> run(AdbCommandRequest request) async {
     if (_disposed) {
@@ -410,6 +488,23 @@ class AdbService implements AdbController {
         timeout: Duration(seconds: 5),
       ),
     );
+    final serverStatus = await run(
+      const AdbCommandRequest(
+        operation: 'inspect shared ADB server',
+        arguments: ['server-status'],
+        timeout: Duration(seconds: 5),
+      ),
+    );
+    if (serverStatus.succeeded) {
+      _adbServerStatus = parseAdbServerStatus(serverStatus.stdout);
+      _adbServerStatusError = _adbServerStatus.isEmpty
+          ? 'empty_or_unrecognized'
+          : 'none';
+    } else {
+      _adbServerStatus = const {};
+      _adbServerStatusError = serverStatus.toString();
+    }
+    await recoverOwnedForwards();
   }
 
   @override
@@ -509,8 +604,11 @@ class AdbService implements AdbController {
   /// polling fallback.
   @override
   Stream<void> deviceChanges() async* {
+    var restartDelaySeconds = 1;
     while (!_disposed) {
       Process? tracker;
+      var sawSnapshot = false;
+      Future<String>? stderrFuture;
       try {
         tracker = await Process.start(
           _adbPath,
@@ -524,23 +622,36 @@ class AdbService implements AdbController {
           return;
         }
         _deviceTrackerProcess = tracker;
-        unawaited(tracker.stderr.drain<void>());
+        stderrFuture = _collectBoundedText(tracker.stderr);
         await for (final chunk in tracker.stdout) {
           if (_disposed) return;
-          if (chunk.isNotEmpty) yield null;
+          if (chunk.isNotEmpty) {
+            sawSnapshot = true;
+            _trackerHealthy = true;
+            yield null;
+          }
         }
-        await tracker.exitCode;
-      } catch (_) {
+        _trackerLastExitCode = await tracker.exitCode;
+        _trackerLastError = (await stderrFuture).trim();
+      } catch (error) {
         // The periodic structured refresh reports actionable ADB failures.
         // Tracking itself is only a latency optimization.
+        _trackerLastError = error.toString();
       } finally {
+        _trackerHealthy = false;
+        _trackerRestartCount++;
         if (identical(_deviceTrackerProcess, tracker)) {
           _deviceTrackerProcess = null;
         }
         tracker?.kill(ProcessSignal.sigkill);
       }
       if (!_disposed) {
-        await Future<void>.delayed(const Duration(seconds: 1));
+        await Future<void>.delayed(Duration(seconds: restartDelaySeconds));
+        if (sawSnapshot) {
+          restartDelaySeconds = 1;
+        } else {
+          restartDelaySeconds = (restartDelaySeconds * 2).clamp(1, 15);
+        }
       }
     }
   }
@@ -851,6 +962,11 @@ class AdbService implements AdbController {
     required String socketName,
     required int generation,
   }) async {
+    _validateOwnedForwardIdentity(
+      deviceId: deviceId,
+      socketName: socketName,
+      generation: generation,
+    );
     final result = await _required(
       AdbCommandRequest(
         operation: 'create ADB USB audio forward',
@@ -875,16 +991,53 @@ class AdbService implements AdbController {
         'ADB did not return a valid forwarded port: ${result.stdout.trim()}',
       );
     }
-    return AdbForwardSession(
+    final session = AdbForwardSession(
       deviceId: deviceId,
       hostPort: port,
       socketName: socketName,
       generation: generation,
     );
+    try {
+      final existing = await _readForwardJournal();
+      await _writeForwardJournal([...existing, session]);
+      _forwardJournalStatus = 'active:${existing.length + 1}';
+    } catch (journalError) {
+      // Never return an unjournaled mapping: a process crash immediately
+      // after this method returns would otherwise make exact cleanup
+      // impossible. Roll the just-created mapping back first.
+      try {
+        await _removeForwardMapping(session);
+      } catch (cleanupError) {
+        throw StateError(
+          'Could not record the owned ADB forward ($journalError) and could '
+          'not roll it back ($cleanupError).',
+        );
+      }
+      rethrow;
+    }
+    return session;
   }
 
   @override
   Future<void> removeForward(AdbForwardSession session) async {
+    await _removeForwardMapping(session);
+    try {
+      final existing = await _readForwardJournal();
+      await _writeForwardJournal(
+        existing
+            .where((candidate) => !_sameForward(candidate, session))
+            .toList(),
+      );
+    } catch (error) {
+      // The mapping is already gone. Retaining a stale journal entry is safe:
+      // the next startup verifies --list before removing anything and will
+      // clear the absent entry.
+      _forwardJournalStatus = 'cleanup_record_failed:$error';
+      stderr.writeln('Could not update ADB forward cleanup journal: $error');
+    }
+  }
+
+  Future<void> _removeForwardMapping(AdbForwardSession session) async {
     final result = await run(
       AdbCommandRequest(
         operation: 'remove owned ADB USB audio forward',
@@ -905,6 +1058,205 @@ class AdbService implements AdbController {
             cleanupError.contains('not found'));
     if (!result.succeeded && !alreadyGone) {
       throw AdbCommandException(result);
+    }
+  }
+
+  Future<void> recoverOwnedForwards() {
+    if (_forwardRecoveryCompleted) return Future.value();
+    final active = _forwardRecovery;
+    if (active != null) return active;
+    final recovery = _runForwardRecovery();
+    _forwardRecovery = recovery;
+    return recovery.whenComplete(() {
+      if (identical(_forwardRecovery, recovery)) _forwardRecovery = null;
+    });
+  }
+
+  Future<void> _runForwardRecovery() async {
+    await _recoverOwnedForwards();
+    final retryable =
+        _forwardJournalStatus.startsWith('recovery_deferred') ||
+        _forwardJournalStatus.startsWith('recovery_record_failed');
+    if (!retryable) _forwardRecoveryCompleted = true;
+  }
+
+  Future<void> _recoverOwnedForwards() async {
+    final journal = await _readForwardJournal();
+    if (journal.isEmpty) {
+      if (_forwardJournalStatus == 'not_checked') {
+        _forwardJournalStatus = 'clean';
+      }
+      return;
+    }
+    final listed = await run(
+      const AdbCommandRequest(
+        operation: 'list ADB forwards for crash recovery',
+        arguments: ['forward', '--list'],
+        timeout: Duration(seconds: 6),
+      ),
+    );
+    if (!listed.succeeded) {
+      _forwardJournalStatus = 'recovery_deferred:${listed.toString()}';
+      return;
+    }
+    final activeMappings = const LineSplitter()
+        .convert(listed.stdout)
+        .map((line) => line.trim().split(RegExp(r'\s+')))
+        .where((parts) => parts.length == 3)
+        .map((parts) => (parts[0], parts[1], parts[2]))
+        .toSet();
+    final retained = <AdbForwardSession>[];
+    var removed = 0;
+    for (final session in journal) {
+      final exact = (
+        session.deviceId,
+        'tcp:${session.hostPort}',
+        'localabstract:${session.socketName}',
+      );
+      if (!activeMappings.contains(exact)) continue;
+      try {
+        await _removeForwardMapping(session);
+        removed++;
+      } catch (error) {
+        retained.add(session);
+        _forwardJournalStatus = 'recovery_deferred:$error';
+      }
+    }
+    try {
+      await _writeForwardJournal(retained);
+      if (retained.isEmpty) {
+        _forwardJournalStatus = removed == 0
+            ? 'cleaned_absent_entries'
+            : 'recovered:$removed';
+      } else {
+        _forwardJournalStatus = 'recovery_deferred:${retained.length}';
+      }
+    } catch (error) {
+      _forwardJournalStatus = 'recovery_record_failed:$error';
+    }
+  }
+
+  void _validateOwnedForwardIdentity({
+    required String deviceId,
+    required String socketName,
+    required int generation,
+  }) {
+    if (!RegExp(r'^[^\s]{1,255}$').hasMatch(deviceId)) {
+      throw ArgumentError.value(deviceId, 'deviceId', 'Invalid ADB serial');
+    }
+    if (!RegExp(r'^as_1_[0-9a-f]{16}$').hasMatch(socketName)) {
+      throw ArgumentError.value(
+        socketName,
+        'socketName',
+        'Not an AudioShare-owned socket name',
+      );
+    }
+    if (generation < 1) {
+      throw ArgumentError.value(generation, 'generation', 'Must be positive');
+    }
+  }
+
+  bool _sameForward(AdbForwardSession left, AdbForwardSession right) =>
+      left.deviceId == right.deviceId &&
+      left.hostPort == right.hostPort &&
+      left.socketName == right.socketName &&
+      left.generation == right.generation;
+
+  Future<List<AdbForwardSession>> _readForwardJournal() async {
+    final file = File(_forwardJournalPath);
+    if (!await file.exists()) return [];
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map<String, dynamic> ||
+          decoded['owner'] != _forwardJournalOwner ||
+          decoded['version'] != _forwardJournalVersion ||
+          decoded['forwards'] is! List<dynamic>) {
+        throw const FormatException('Unrecognized journal envelope');
+      }
+      final result = <AdbForwardSession>[];
+      for (final raw in decoded['forwards'] as List<dynamic>) {
+        if (raw is! Map<String, dynamic>) {
+          throw const FormatException('Invalid journal record');
+        }
+        final deviceId = raw['deviceId'];
+        final hostPort = raw['hostPort'];
+        final socketName = raw['socketName'];
+        final generation = raw['generation'];
+        if (deviceId is! String ||
+            hostPort is! int ||
+            socketName is! String ||
+            generation is! int ||
+            hostPort < 1 ||
+            hostPort > 65535) {
+          throw const FormatException('Invalid journal field');
+        }
+        _validateOwnedForwardIdentity(
+          deviceId: deviceId,
+          socketName: socketName,
+          generation: generation,
+        );
+        result.add(
+          AdbForwardSession(
+            deviceId: deviceId,
+            hostPort: hostPort,
+            socketName: socketName,
+            generation: generation,
+          ),
+        );
+      }
+      return result;
+    } catch (error) {
+      _forwardJournalStatus = 'invalid_ignored:$error';
+      // The journal itself is application-owned, but its contents are not
+      // trusted. Quarantine it without issuing any ADB removal command.
+      final quarantine = File(
+        '$_forwardJournalPath.invalid.${DateTime.now().millisecondsSinceEpoch}',
+      );
+      try {
+        await file.rename(quarantine.path);
+      } catch (_) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
+      return [];
+    }
+  }
+
+  Future<void> _writeForwardJournal(List<AdbForwardSession> sessions) async {
+    final file = File(_forwardJournalPath);
+    if (sessions.isEmpty) {
+      if (await file.exists()) await file.delete();
+      return;
+    }
+    await file.parent.create(recursive: true);
+    final temporary = File(
+      '$_forwardJournalPath.$pid.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    final encoded = jsonEncode({
+      'owner': _forwardJournalOwner,
+      'version': _forwardJournalVersion,
+      'forwards': sessions
+          .map(
+            (session) => {
+              'deviceId': session.deviceId,
+              'hostPort': session.hostPort,
+              'socketName': session.socketName,
+              'generation': session.generation,
+            },
+          )
+          .toList(growable: false),
+    });
+    try {
+      await temporary.writeAsString(encoded, flush: true);
+      try {
+        await temporary.rename(file.path);
+      } on FileSystemException {
+        if (await file.exists()) await file.delete();
+        await temporary.rename(file.path);
+      }
+    } finally {
+      if (await temporary.exists()) await temporary.delete();
     }
   }
 

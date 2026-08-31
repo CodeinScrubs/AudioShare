@@ -205,7 +205,23 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.appTitle),
+        title: Row(
+          children: [
+            Text(l10n.appTitle),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'created by Shayan SalehiRad',
+                  maxLines: 1,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ),
+          ],
+        ),
         actions: [
           PopupMenuButton<Locale>(
             tooltip: l10n.language,
@@ -319,8 +335,17 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                 device.metadataError != null && connectState == 0
                 ? l10n.deviceMetadataUnavailable
                 : deviceStatus;
+            final volumeWarning =
+                connectState != 2 || _dataSource.androidMediaVolumeMax <= 0
+                ? null
+                : _dataSource.androidMediaVolume == 0
+                ? l10n.phoneMediaVolumeMuted
+                : _dataSource.androidMediaVolume * 10 <=
+                      _dataSource.androidMediaVolumeMax
+                ? l10n.phoneMediaVolumeLow
+                : null;
             return SizedBox(
-              height: 72,
+              height: volumeWarning == null ? 72 : 92,
               child: Row(
                 children: [
                   Padding(
@@ -345,6 +370,20 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                             style: const TextStyle(fontSize: 12),
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (volumeWarning != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              volumeWarning,
+                              style: TextStyle(
+                                color: _dataSource.androidMediaVolume == 0
+                                    ? Theme.of(context).colorScheme.error
+                                    : Colors.deepOrange,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ],
                       ),
                     ),

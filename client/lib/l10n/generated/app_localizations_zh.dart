@@ -74,6 +74,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamingDefaultOutputAudio => '正在传输 Windows 默认输出（最终兼容回退）';
 
   @override
+  String get phoneMediaVolumeMuted => '手机媒体音量已静音';
+
+  @override
+  String get phoneMediaVolumeLow => '手机媒体音量很低';
+
+  @override
   String get phaseCheckingAdb => '正在检查 USB 和 ADB';
 
   @override

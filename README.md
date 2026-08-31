@@ -10,7 +10,26 @@ For non-developers, start with the [beginner guide](docs/GETTING_STARTED.md).
 The release page publishes one standalone Windows ZIP containing the EXE,
 bundled ADB, and matching companion APK:
 
-[Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.2)
+[Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.3)
+
+### Ask an AI assistant to guide you
+
+You can give an AI assistant the two repository links below and ask it to walk
+you through setup one step at a time. The repositories include an explicit
+[AI setup brief](docs/AI_ASSISTANT_SETUP.md) so the assistant knows that an
+ordinary user should download the portable Windows ZIP—not clone source code or
+open Android Studio.
+
+Copy and send this prompt:
+
+```text
+Help me set up AudioShare USB as a beginner, one step at a time. I want my
+Android phone to play all ordinary Windows audio through a USB cable. Use the
+ready-made portable Windows release, not a source build. Read these projects
+and their AI setup instructions before guiding me:
+https://github.com/CodeinScrubs/AudioShare
+https://github.com/CodeinScrubs/AudioShare-Android
+```
 
 Development status: the Android companion passes clean unit, lint, debug, and
 permanently signed release builds. A
@@ -20,8 +39,10 @@ exact cleanup. Headless virtual audio can underrun, so the current Android
 hardening pass treats zero-drop timing as a physical-device gate. The Windows
 capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
-non-zero PCM. Flutter analysis and 31 supervisor/lifecycle/security/persistence
-tests pass.
+non-zero PCM. Flutter analysis and 38 supervisor/lifecycle/security/persistence
+tests pass. RC3 also reports Windows capture signal level and Android playback
+progress, journals exact AudioShare-owned ADB forwards for crash recovery, and
+shows a visible warning when the phone media volume is muted or very low.
 The complete audible path is now hardware tested on a Samsung Galaxy A52s with
 Android 14: global-system capture, a 10 ms host queue high-water mark, and zero
 visible host/Android drops in the initial run. Screen-off endurance, repeated
@@ -113,7 +134,7 @@ flutter test
 flutter build windows --debug
 ```
 
-Debug builds bundle the clearly labeled version-code 5 debug companion APK. A
+Debug builds bundle the clearly labeled version-code 6 debug companion APK. A
 distributable release must use a stable signing key and provide both the signed
 APK and its pinned signer-certificate SHA-256 explicitly. Configuration fails
 unless Android SDK `apkanalyzer` and `apksigner` confirm the signature, exact
@@ -192,3 +213,5 @@ g++ -std=c++17 -Wall -Wextra -Werror `
 Licensed under [LGPL-3.0-or-later](LICENSE). Bundled Android platform-tools
 notices are preserved in `client/assets/platform-tools-NOTICE.txt` and copied
 into Windows distributions.
+
+AudioShare USB custom edition was created by Shayan SalehiRad.

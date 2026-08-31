@@ -22,6 +22,7 @@ constexpr size_t kTokenBytes = 32;
 constexpr size_t kHelloBytes = 40;
 constexpr size_t kLegacyPlaybackStatsBytes = 24;
 constexpr size_t kEnhancedPlaybackStatsBytes = 60;
+constexpr size_t kPlaybackProgressStatsBytes = 92;
 constexpr size_t kMaxControlPayload = 64 * 1024;
 constexpr size_t kMaxPcmPayload = 8 * 1024;
 
@@ -91,13 +92,20 @@ struct PlaybackStats {
     uint32_t mediaVolume = 0;
     uint32_t mediaVolumeMax = 0;
     uint32_t queueHighWaterFrames = 0;
+    uint64_t writtenFrames = 0;
+    uint64_t playbackHeadFrames = 0;
+    uint32_t lastWriteProgressAgeMilliseconds = 0;
+    uint32_t lastPlaybackAdvanceAgeMilliseconds = 0;
+    uint32_t playState = 0;
+    uint32_t performanceMode = 0;
 };
 
 inline bool DecodePlaybackStats(
         const uint8_t* payload, size_t length, PlaybackStats* stats) {
     if (payload == nullptr || stats == nullptr ||
         (length != kLegacyPlaybackStatsBytes &&
-         length != kEnhancedPlaybackStatsBytes)) {
+         length != kEnhancedPlaybackStatsBytes &&
+         length != kPlaybackProgressStatsBytes)) {
         return false;
     }
     *stats = {};
@@ -105,7 +113,7 @@ inline bool DecodePlaybackStats(
     stats->droppedFrames = ReadU64(payload + 8);
     stats->queueDepth = ReadU32(payload + 16);
     stats->bufferFrames = ReadU32(payload + 20);
-    if (length == kEnhancedPlaybackStatsBytes) {
+    if (length >= kEnhancedPlaybackStatsBytes) {
         stats->queueFrames = ReadU32(payload + 24);
         stats->bufferCapacityFrames = ReadU32(payload + 28);
         stats->startThresholdFrames = ReadU32(payload + 32);
@@ -115,6 +123,14 @@ inline bool DecodePlaybackStats(
         stats->mediaVolume = ReadU32(payload + 48);
         stats->mediaVolumeMax = ReadU32(payload + 52);
         stats->queueHighWaterFrames = ReadU32(payload + 56);
+    }
+    if (length == kPlaybackProgressStatsBytes) {
+        stats->writtenFrames = ReadU64(payload + 60);
+        stats->playbackHeadFrames = ReadU64(payload + 68);
+        stats->lastWriteProgressAgeMilliseconds = ReadU32(payload + 76);
+        stats->lastPlaybackAdvanceAgeMilliseconds = ReadU32(payload + 80);
+        stats->playState = ReadU32(payload + 84);
+        stats->performanceMode = ReadU32(payload + 88);
     }
     return true;
 }

@@ -6,7 +6,7 @@ param(
     [string] $GithubEnvironmentFile = $env:GITHUB_ENV,
 
     [ValidateRange(1, [int]::MaxValue)]
-    [int] $VersionCode = 5
+    [int] $VersionCode = 6
 )
 
 Set-StrictMode -Version Latest

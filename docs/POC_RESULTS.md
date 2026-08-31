@@ -477,3 +477,41 @@ were reported as diagnostics rather than hidden. A physical Galaxy A52s / Androi
 dialog after automatic recovery. Long-duration screen-off, repeated recovery,
 measured latency, restricted-PC, and two-hour endurance gates remain open for
 stable promotion.
+
+## 2026-08-31 RC3 reliability and packaging checkpoint
+
+RC3 was rebuilt after the final playback, route-recovery, teardown, diagnostic,
+and ADB-journal hardening. Android version code 6 / `1.0.0-rc.3` passes 33 unit
+tests, debug lint, and clean debug assembly. The GitHub-built signed companion
+was downloaded again and independently verified as non-debuggable, limited to
+the four expected permissions, and signed by the pinned permanent certificate:
+
+```text
+package=com.audioshare.usbcompanion
+versionCode=6
+APK SHA-256=9dfa539d3ac9d7eed6195ffdb2fb292067c99e28c1b8d57c50e0df4ed797f29d
+certificate SHA-256=23bb6499dbb6aa3610d0a9ee0df9c922d9023e4b7990dc23ac6c1743f215950c
+```
+
+The matching `3.0.0-rc.3+3` Windows host passes formatting, Flutter analysis,
+all 38 host tests, a clean MSVC Debug build, wire-protocol and mixer tests, and
+handshake retry/stop/error/disconnect integration. A live global-capture test
+used an independent Windows system sound so the signal gate distinguishes real
+audio from 1-LSB endpoint noise. It reported a received peak magnitude of
+28997, recent non-silent capture, and zero host drops.
+
+The signed Release build passed complete bundle validation before packaging and
+again after extraction into a clean temporary path containing spaces. The ZIP
+contains the EXE, matching signed APK, bundled ADB/runtime files, integrity
+manifest, and beginner/AI-assistant guides:
+
+```text
+WINDOWS_BUNDLE_OK files=33
+AudioShare-USB-Windows-v3.0.0-rc.3.zip
+SHA-256=57a509b0ff238b6abcf56ee688b6e78cc2ca10734bf4fd30302bfc096ec9e71d
+```
+
+This checkpoint proves source, package, and local Windows integration quality.
+It does not replace the remaining physical-device promotion gates: repeated
+unplug/replug recovery, ten-minute screen-off playback, measured latency,
+restricted-PC behavior, and two-hour endurance.

@@ -149,6 +149,8 @@ install(FILES "${REPOSITORY_ROOT}/README.md" "${REPOSITORY_ROOT}/SECURITY.md"
   DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 install(FILES
+  "${REPOSITORY_ROOT}/docs/GETTING_STARTED.md"
+  "${REPOSITORY_ROOT}/docs/AI_ASSISTANT_SETUP.md"
   "${REPOSITORY_ROOT}/docs/TROUBLESHOOTING.md"
   "${REPOSITORY_ROOT}/docs/PROTOCOL.md"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/docs"
@@ -188,7 +190,7 @@ if(AUDIOSHARE_COMPANION_APK)
       -File "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/verify_companion_apk.ps1"
       -Apk "${AUDIOSHARE_COMPANION_APK}"
       -ExpectedPackage "com.audioshare.usbcompanion"
-      -ExpectedVersionCode 5
+      -ExpectedVersionCode 6
       -ExpectedCertificateSha256 "${AUDIOSHARE_COMPANION_CERT_SHA256}"
     RESULT_VARIABLE COMPANION_VERIFY_RESULT
     OUTPUT_VARIABLE COMPANION_VERIFY_OUTPUT

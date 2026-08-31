@@ -224,6 +224,18 @@ abstract class AppLocalizations {
   /// **'Streaming Windows default output (last-resort compatibility mode)'**
   String get streamingDefaultOutputAudio;
 
+  /// No description provided for @phoneMediaVolumeMuted.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone media volume is muted'**
+  String get phoneMediaVolumeMuted;
+
+  /// No description provided for @phoneMediaVolumeLow.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone media volume is very low'**
+  String get phoneMediaVolumeLow;
+
   /// No description provided for @phaseCheckingAdb.
   ///
   /// In en, this message translates to:

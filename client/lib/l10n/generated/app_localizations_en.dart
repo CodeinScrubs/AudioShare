@@ -78,6 +78,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Streaming Windows default output (last-resort compatibility mode)';
 
   @override
+  String get phoneMediaVolumeMuted => 'Phone media volume is muted';
+
+  @override
+  String get phoneMediaVolumeLow => 'Phone media volume is very low';
+
+  @override
   String get phaseCheckingAdb => 'Checking USB and ADB';
 
   @override

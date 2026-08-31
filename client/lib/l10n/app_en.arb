@@ -26,6 +26,8 @@
     }
   },
   "streamingDefaultOutputAudio": "Streaming Windows default output (last-resort compatibility mode)",
+  "phoneMediaVolumeMuted": "Phone media volume is muted",
+  "phoneMediaVolumeLow": "Phone media volume is very low",
   "phaseCheckingAdb": "Checking USB and ADB",
   "phaseCheckingCompanion": "Checking Android companion",
   "phaseCreatingForward": "Creating USB transport",

@@ -41,6 +41,7 @@ typedef struct AUDIOCLIENT_ACTIVATION_PARAMS {
 #include <array>
 #include <chrono>
 #include <condition_variable>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <deque>
@@ -113,6 +114,12 @@ std::atomic<uint32_t> g_androidFocusState{0};
 std::atomic<uint32_t> g_androidMediaVolume{0};
 std::atomic<uint32_t> g_androidMediaVolumeMax{0};
 std::atomic<uint32_t> g_androidQueueHighWaterFrames{0};
+std::atomic<uint64_t> g_androidWrittenFrames{0};
+std::atomic<uint64_t> g_androidPlaybackHeadFrames{0};
+std::atomic<uint32_t> g_androidLastWriteProgressAgeMilliseconds{0};
+std::atomic<uint32_t> g_androidLastPlaybackAdvanceAgeMilliseconds{0};
+std::atomic<uint32_t> g_androidPlayState{0};
+std::atomic<uint32_t> g_androidPerformanceMode{0};
 std::atomic<uint32_t> g_hostQueueFrames{0};
 std::atomic<uint32_t> g_hostQueueHighWaterFrames{0};
 std::atomic<uint64_t> g_transportBytesSent{0};
@@ -127,6 +134,10 @@ std::atomic<uint64_t> g_captureDiscontinuities{0};
 std::atomic<uint32_t> g_endpointRebuildCount{0};
 std::atomic<uint64_t> g_endpointCatchUpFrames{0};
 std::atomic<uint32_t> g_endpointQueueHighWaterFrames{0};
+std::atomic<uint64_t> g_capturedFrames{0};
+std::atomic<uint32_t> g_capturePeakPermille{0};
+std::atomic<uint32_t> g_captureRmsPermille{0};
+std::atomic<uint64_t> g_lastNonSilentTickMilliseconds{0};
 std::atomic<SOCKET> g_transportSocket{INVALID_SOCKET};
 
 HANDLE g_transportThread = nullptr;
@@ -336,6 +347,35 @@ void DiscardQueuedAudio() {
 
 void EnqueuePcm(const uint8_t* data, size_t length) {
     if (data == nullptr && length != 0) return;
+    if (!g_captureRunning.load()) return;
+    const size_t alignedLength = length - length % kFrameBytes;
+    if (alignedLength > 0) {
+        const size_t sampleCount = alignedLength / sizeof(int16_t);
+        uint64_t sumSquares = 0;
+        uint32_t peak = 0;
+        for (size_t index = 0; index < sampleCount; ++index) {
+            const uint16_t encoded = static_cast<uint16_t>(data[index * 2]) |
+                static_cast<uint16_t>(data[index * 2 + 1]) << 8;
+            const int32_t sample = static_cast<int16_t>(encoded);
+            const uint32_t magnitude = static_cast<uint32_t>(
+                sample < 0 ? -sample : sample);
+            if (magnitude > peak) peak = magnitude;
+            sumSquares += static_cast<uint64_t>(magnitude) * magnitude;
+        }
+        const uint32_t peakPermille = static_cast<uint32_t>(
+            (static_cast<uint64_t>(peak) * 1000 + 16384) / 32768);
+        const double meanSquare = sampleCount == 0
+            ? 0.0
+            : static_cast<double>(sumSquares) / sampleCount;
+        const uint32_t rmsPermille = static_cast<uint32_t>(
+            std::sqrt(meanSquare) * 1000.0 / 32768.0 + 0.5);
+        g_capturedFrames.fetch_add(alignedLength / kFrameBytes);
+        g_capturePeakPermille.store(peakPermille);
+        g_captureRmsPermille.store(rmsPermille);
+        if (peak >= 32) {
+            g_lastNonSilentTickMilliseconds.store(GetTickCount64());
+        }
+    }
     size_t offset = 0;
     while (offset < length && g_captureRunning.load()) {
         size_t chunkLength = length - offset;
@@ -1309,6 +1349,14 @@ DWORD WINAPI TransportThread(LPVOID) {
                 g_androidMediaVolumeMax.store(stats.mediaVolumeMax);
                 g_androidQueueHighWaterFrames.store(
                     stats.queueHighWaterFrames);
+                g_androidWrittenFrames.store(stats.writtenFrames);
+                g_androidPlaybackHeadFrames.store(stats.playbackHeadFrames);
+                g_androidLastWriteProgressAgeMilliseconds.store(
+                    stats.lastWriteProgressAgeMilliseconds);
+                g_androidLastPlaybackAdvanceAgeMilliseconds.store(
+                    stats.lastPlaybackAdvanceAgeMilliseconds);
+                g_androidPlayState.store(stats.playState);
+                g_androidPerformanceMode.store(stats.performanceMode);
                 const auto rtt = std::chrono::duration_cast<
                     std::chrono::milliseconds>(
                         lastAndroidResponse - pendingStatsSent).count();
@@ -1553,6 +1601,12 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
     g_androidMediaVolume.store(0);
     g_androidMediaVolumeMax.store(0);
     g_androidQueueHighWaterFrames.store(0);
+    g_androidWrittenFrames.store(0);
+    g_androidPlaybackHeadFrames.store(0);
+    g_androidLastWriteProgressAgeMilliseconds.store(0);
+    g_androidLastPlaybackAdvanceAgeMilliseconds.store(0);
+    g_androidPlayState.store(0);
+    g_androidPerformanceMode.store(0);
     g_hostQueueHighWaterFrames.store(0);
     g_transportBytesSent.store(0);
     g_heartbeatRttMilliseconds.store(0);
@@ -1566,6 +1620,10 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
     g_endpointRebuildCount.store(0);
     g_endpointCatchUpFrames.store(0);
     g_endpointQueueHighWaterFrames.store(0);
+    g_capturedFrames.store(0);
+    g_capturePeakPermille.store(0);
+    g_captureRmsPermille.store(0);
+    g_lastNonSilentTickMilliseconds.store(0);
     g_connected.store(false);
     if (g_stopEvent != nullptr) ResetEvent(g_stopEvent);
     {
@@ -1729,6 +1787,32 @@ extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidQueueHighWa
     return static_cast<unsigned int>(g_androidQueueHighWaterFrames.load());
 }
 
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetAndroidWrittenFrames() {
+    return static_cast<unsigned long long>(g_androidWrittenFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetAndroidPlaybackHeadFrames() {
+    return static_cast<unsigned long long>(g_androidPlaybackHeadFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidLastWriteProgressAgeMilliseconds() {
+    return static_cast<unsigned int>(
+        g_androidLastWriteProgressAgeMilliseconds.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidLastPlaybackAdvanceAgeMilliseconds() {
+    return static_cast<unsigned int>(
+        g_androidLastPlaybackAdvanceAgeMilliseconds.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidPlayState() {
+    return static_cast<unsigned int>(g_androidPlayState.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidPerformanceMode() {
+    return static_cast<unsigned int>(g_androidPerformanceMode.load());
+}
+
 extern "C" __declspec(dllexport) unsigned int AudioCapture_GetHostQueueFrames() {
     return static_cast<unsigned int>(g_hostQueueFrames.load());
 }
@@ -1783,4 +1867,23 @@ extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointCatc
 
 extern "C" __declspec(dllexport) unsigned int AudioCapture_GetEndpointQueueHighWaterFrames() {
     return static_cast<unsigned int>(g_endpointQueueHighWaterFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetCapturedFrames() {
+    return static_cast<unsigned long long>(g_capturedFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetCapturePeakPermille() {
+    return static_cast<unsigned int>(g_capturePeakPermille.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetCaptureRmsPermille() {
+    return static_cast<unsigned int>(g_captureRmsPermille.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetLastNonSilentAgeMilliseconds() {
+    const uint64_t last = g_lastNonSilentTickMilliseconds.load();
+    if (last == 0) return UINT32_MAX;
+    const uint64_t age = GetTickCount64() - last;
+    return static_cast<unsigned int>(age > UINT32_MAX ? UINT32_MAX : age);
 }

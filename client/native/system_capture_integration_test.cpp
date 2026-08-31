@@ -35,6 +35,7 @@ using AudioCaptureGetUint64 = unsigned long long (*)();
 HANDLE g_transportReady = nullptr;
 std::atomic<uint64_t> g_pcmBytes{0};
 std::atomic<uint64_t> g_nonZeroPcmBytes{0};
+std::atomic<uint32_t> g_receivedPeakMagnitude{0};
 std::atomic<bool> g_serverOk{false};
 std::atomic<bool> g_disconnectAfterReady{false};
 std::atomic<bool> g_rejectFirstConnection{false};
@@ -175,6 +176,20 @@ DWORD WINAPI FakeCompanionThread(LPVOID) {
             for (const uint8_t value : payload) {
                 if (value != 0) ++nonZeroBytes;
             }
+            uint32_t peakMagnitude = 0;
+            for (size_t index = 0; index + 1 < payload.size(); index += 2) {
+                const uint16_t encoded = static_cast<uint16_t>(payload[index]) |
+                    static_cast<uint16_t>(payload[index + 1]) << 8;
+                const int32_t sample = static_cast<int16_t>(encoded);
+                const uint32_t magnitude = static_cast<uint32_t>(
+                    sample < 0 ? -sample : sample);
+                if (magnitude > peakMagnitude) peakMagnitude = magnitude;
+            }
+            uint32_t observedPeak = g_receivedPeakMagnitude.load();
+            while (observedPeak < peakMagnitude &&
+                   !g_receivedPeakMagnitude.compare_exchange_weak(
+                       observedPeak, peakMagnitude)) {
+            }
             g_nonZeroPcmBytes.fetch_add(nonZeroBytes);
         } else if (frame.type == kTypeStats) {
             uint8_t stats[24]{};
@@ -312,6 +327,13 @@ int main(int argc, char** argv) {
         library, "AudioCapture_GetCaptureDiscontinuities");
     const auto getEndpointRebuildCount = LoadFunction<AudioCaptureGetUint32>(
         library, "AudioCapture_GetEndpointRebuildCount");
+    const auto getCapturedFrames = LoadFunction<AudioCaptureGetUint64>(
+        library, "AudioCapture_GetCapturedFrames");
+    const auto getCapturePeakPermille = LoadFunction<AudioCaptureGetUint32>(
+        library, "AudioCapture_GetCapturePeakPermille");
+    const auto getLastNonSilentAgeMilliseconds =
+        LoadFunction<AudioCaptureGetUint32>(
+            library, "AudioCapture_GetLastNonSilentAgeMilliseconds");
     if (initialize == nullptr || connect == nullptr || start == nullptr ||
         stop == nullptr || cleanup == nullptr || getErrorCode == nullptr ||
         getErrorMessage == nullptr || getCaptureMode == nullptr ||
@@ -321,7 +343,9 @@ int main(int argc, char** argv) {
         getEndpointUnderrunFrames == nullptr ||
         getEndpointDiscontinuities == nullptr ||
         getCaptureDiscontinuities == nullptr ||
-        getEndpointRebuildCount == nullptr) {
+        getEndpointRebuildCount == nullptr || getCapturedFrames == nullptr ||
+        getCapturePeakPermille == nullptr ||
+        getLastNonSilentAgeMilliseconds == nullptr) {
         std::fprintf(stderr, "The DLL does not expose the expected Windows API\n");
         return 1;
     }
@@ -406,9 +430,23 @@ int main(int argc, char** argv) {
             const uint64_t endpointDroppedFrames =
                 getEndpointDroppedFrames();
             const uint64_t droppedChunks = getDroppedChunks();
+            const uint64_t capturedFrames = getCapturedFrames();
+            const unsigned int capturePeakPermille =
+                getCapturePeakPermille();
+            const unsigned int lastNonSilentAgeMilliseconds =
+                getLastNonSilentAgeMilliseconds();
             std::printf("pcm_bytes=%llu nonzero_pcm_bytes=%llu\n",
                 static_cast<unsigned long long>(pcmBytes),
                 static_cast<unsigned long long>(nonZeroPcmBytes));
+            const uint32_t receivedPeakMagnitude =
+                g_receivedPeakMagnitude.load();
+            std::printf("received_peak_magnitude=%u\n",
+                receivedPeakMagnitude);
+            std::printf(
+                "captured_frames=%llu capture_peak_permille=%u "
+                "last_non_silent_age_ms=%u\n",
+                static_cast<unsigned long long>(capturedFrames),
+                capturePeakPermille, lastNonSilentAgeMilliseconds);
             std::printf(
                 "host_dropped_chunks=%llu active_endpoint_count=%u "
                 "endpoint_dropped_frames=%llu "
@@ -423,7 +461,10 @@ int main(int argc, char** argv) {
                 getEndpointRebuildCount());
             if ((expectedMode == 0 || mode == expectedMode) &&
                 (!requirePcm || pcmBytes > 0) &&
-                (!requireSignal || nonZeroPcmBytes > 0) &&
+                (!requirePcm || capturedFrames > 0) &&
+                (!requireSignal ||
+                    (receivedPeakMagnitude >= 32 &&
+                      lastNonSilentAgeMilliseconds != UINT32_MAX)) &&
                 droppedChunks == 0 &&
                 (expectedMode != 2 || endpointDroppedFrames == 0) &&
                 (!expectHandshakeRetry || g_acceptedConnections.load() >= 2)) {

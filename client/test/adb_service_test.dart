@@ -195,6 +195,21 @@ USB456 device product:b model:Flaky transport_id:2
     expect(hasSuccessfulActivityLaunchStatus('Status: Error\n'), isFalse);
   });
 
+  test('shared ADB server status parser accepts only simple keys', () {
+    expect(
+      parseAdbServerStatus('''version: 37.0.1
+executable_absolute_path: C:\\Android\\adb.exe
+mdns_enabled: true
+not a key: ignored
+'''),
+      {
+        'version': '37.0.1',
+        'executable_absolute_path': r'C:\Android\adb.exe',
+        'mdns_enabled': 'true',
+      },
+    );
+  });
+
   test(
     'companion handshake inputs are redacted and cleanup is exact',
     () async {
@@ -202,13 +217,15 @@ USB456 device product:b model:Flaky transport_id:2
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=5 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=6 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_fixtureApkHash  /data/app/debug/base.apk\n')
         ..enqueue(stdout: '43210\n');
       final adb = AdbService(
         runner: runner,
         adbPath: 'fake-adb',
         companionDirectoryPath: companionDirectory.path,
+        forwardJournalPath:
+            '${companionDirectory.path}${Platform.pathSeparator}forward.json',
       );
       const token =
           '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
@@ -217,17 +234,23 @@ USB456 device product:b model:Flaky transport_id:2
       expect(installation, CompanionInstallation.debug);
       final forward = await adb.createForward(
         deviceId: 'USB123',
-        socketName: 'as_1_test',
+        socketName: 'as_1_0011223344556677',
         generation: 7,
       );
       expect(forward.hostPort, 43210);
+      expect(
+        File(
+          '${companionDirectory.path}${Platform.pathSeparator}forward.json',
+        ).existsSync(),
+        isTrue,
+      );
 
       runner.enqueue(
         stdout: 'Starting: Intent { ... }\nStatus: ok\nComplete\n',
       );
       await adb.launchCompanion(
         deviceId: 'USB123',
-        socketName: 'as_1_test',
+        socketName: 'as_1_0011223344556677',
         tokenHex: token,
         generation: 7,
         installation: installation!,
@@ -245,6 +268,12 @@ USB456 device product:b model:Flaky transport_id:2
         'tcp:43210',
       ]);
       expect(runner.requests.last.arguments, isNot(contains('--remove-all')));
+      expect(
+        File(
+          '${companionDirectory.path}${Platform.pathSeparator}forward.json',
+        ).existsSync(),
+        isFalse,
+      );
       adb.dispose();
       await companionDirectory.delete(recursive: true);
     },
@@ -257,7 +286,7 @@ USB456 device product:b model:Flaky transport_id:2
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=5 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=6 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_wrongFixtureApkHash  /data/app/debug/base.apk\n');
       final adb = AdbService(
         runner: runner,
@@ -295,7 +324,7 @@ USB456 device product:b model:Flaky transport_id:2
     () async {
       final runner = FakeAdbRunner()
         ..enqueue(stdout: 'package:/data/app/release/base.apk\n')
-        ..enqueue(stdout: '    versionCode=6 minSdk=26 targetSdk=36\n');
+        ..enqueue(stdout: '    versionCode=7 minSdk=26 targetSdk=36\n');
       final adb = AdbService(runner: runner, adbPath: 'fake-adb');
 
       await expectLater(
@@ -317,12 +346,124 @@ USB456 device product:b model:Flaky transport_id:2
     await expectLater(
       adb.createForward(
         deviceId: 'USB123',
-        socketName: 'as_1_test',
+        socketName: 'as_1_0011223344556677',
         generation: 1,
       ),
       throwsFormatException,
     );
     adb.dispose();
+  });
+
+  test('crash recovery removes only the exact journaled forward', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'audioshare-forward-recovery-',
+    );
+    final journal = '${directory.path}${Platform.pathSeparator}forward.json';
+    final creatorRunner = FakeAdbRunner()..enqueue(stdout: '43210\n');
+    final creator = AdbService(
+      runner: creatorRunner,
+      adbPath: 'fake-adb',
+      forwardJournalPath: journal,
+    );
+    await creator.createForward(
+      deviceId: 'USB123',
+      socketName: 'as_1_0011223344556677',
+      generation: 7,
+    );
+    creator.dispose();
+
+    final recoveryRunner = FakeAdbRunner()
+      ..enqueue(
+        stdout: 'USB123 tcp:43210 localabstract:as_1_0011223344556677\n',
+      )
+      ..enqueue();
+    final recovery = AdbService(
+      runner: recoveryRunner,
+      adbPath: 'fake-adb',
+      forwardJournalPath: journal,
+    );
+
+    await recovery.recoverOwnedForwards();
+
+    expect(recoveryRunner.requests.last.arguments, [
+      '-s',
+      'USB123',
+      'forward',
+      '--remove',
+      'tcp:43210',
+    ]);
+    expect(
+      recoveryRunner.requests.last.arguments,
+      isNot(contains('--remove-all')),
+    );
+    expect(File(journal).existsSync(), isFalse);
+    expect(
+      recovery.diagnosticLines,
+      contains('adb_forward_journal=recovered:1'),
+    );
+    recovery.dispose();
+    await directory.delete(recursive: true);
+  });
+
+  test('crash recovery never removes a mismatched mapping', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'audioshare-forward-mismatch-',
+    );
+    final journal = '${directory.path}${Platform.pathSeparator}forward.json';
+    final creatorRunner = FakeAdbRunner()..enqueue(stdout: '43210\n');
+    final creator = AdbService(
+      runner: creatorRunner,
+      adbPath: 'fake-adb',
+      forwardJournalPath: journal,
+    );
+    await creator.createForward(
+      deviceId: 'USB123',
+      socketName: 'as_1_0011223344556677',
+      generation: 7,
+    );
+    creator.dispose();
+
+    final recoveryRunner = FakeAdbRunner()
+      ..enqueue(stdout: 'USB123 tcp:43210 localabstract:not_audioshare\n');
+    final recovery = AdbService(
+      runner: recoveryRunner,
+      adbPath: 'fake-adb',
+      forwardJournalPath: journal,
+    );
+
+    await recovery.recoverOwnedForwards();
+
+    expect(recoveryRunner.requests, hasLength(1));
+    expect(recoveryRunner.requests.single.arguments, ['forward', '--list']);
+    expect(File(journal).existsSync(), isFalse);
+    recovery.dispose();
+    await directory.delete(recursive: true);
+  });
+
+  test('crash recovery runs only once per host process', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'audioshare-forward-once-',
+    );
+    final journal = '${directory.path}${Platform.pathSeparator}forward.json';
+    final runner = FakeAdbRunner()..enqueue(stdout: '43210\n');
+    final adb = AdbService(
+      runner: runner,
+      adbPath: 'fake-adb',
+      forwardJournalPath: journal,
+    );
+
+    await adb.recoverOwnedForwards();
+    await adb.createForward(
+      deviceId: 'USB123',
+      socketName: 'as_1_0011223344556677',
+      generation: 7,
+    );
+    await adb.recoverOwnedForwards();
+
+    expect(runner.requests, hasLength(1));
+    expect(runner.requests.single.operation, 'create ADB USB audio forward');
+    adb.dispose();
+    await directory.delete(recursive: true);
   });
 
   test(

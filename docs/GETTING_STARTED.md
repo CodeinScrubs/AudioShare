@@ -4,11 +4,16 @@ AudioShare turns an Android phone into a speaker for ordinary sound produced by
 Windows. The Windows program sends the sound through the USB cable; it does not
 use Wi-Fi, Bluetooth, a microphone, or the Internet.
 
+If you prefer interactive help, copy the prompt in
+[Ask an AI assistant](AI_ASSISTANT_SETUP.md#copy-and-send-this-prompt) and send
+it to your AI assistant. It tells the assistant to use the ready-made release
+and explain each phone and Windows step in beginner language.
+
 ## Download one file
 
 Download the single file named
-`AudioShare-USB-Windows-v3.0.0-rc.2.zip` from the
-[GitHub Releases page](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.2).
+`AudioShare-USB-Windows-v3.0.0-rc.3.zip` from the
+[GitHub Releases page](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.3).
 The ZIP already contains the Windows program, ADB, and the matching Android
 companion APK. You do not need Android Studio to use it.
 

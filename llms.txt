@@ -1,0 +1,27 @@
+# AudioShare USB
+
+AudioShare USB turns an Android phone into a speaker for ordinary Windows audio
+over a physical USB cable and authenticated ADB forwarding.
+
+End-user rule: guide users to the portable Windows release ZIP. Do not require
+cloning, Android Studio, Flutter, Gradle, or an APK build. The ZIP already
+contains audioshare.exe, ADB, and the matching signed companion APK.
+
+Authoritative beginner and AI setup instructions:
+- https://github.com/CodeinScrubs/AudioShare/blob/main/docs/AI_ASSISTANT_SETUP.md
+- https://github.com/CodeinScrubs/AudioShare/blob/main/docs/GETTING_STARTED.md
+- https://github.com/CodeinScrubs/AudioShare/blob/main/docs/TROUBLESHOOTING.md
+
+Related Android companion source (developers only):
+- https://github.com/CodeinScrubs/AudioShare-Android
+
+Normal flow: download the latest AudioShare-USB-Windows-*.zip release asset;
+extract all files to a user-writable folder; enable Android Developer Options
+and USB debugging; connect and unlock the phone with a data cable; authorize
+the PC; run audioshare.exe without admin; click Install companion if offered;
+then wait for auto-connect or click Connect and raise phone media volume.
+
+Security and platform constraints: USB only; no INTERNET or microphone
+permission in the companion; no firewall weakening; no silent companion
+installation; normal operation should not need admin. A missing OEM USB/ADB
+driver and exclusive/ASIO/protected audio are external limitations.

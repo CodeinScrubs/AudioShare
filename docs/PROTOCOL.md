@@ -76,8 +76,9 @@ the same real-time rate.
 ## Heartbeat and playback statistics
 
 The host sends an empty STATS request every three seconds after READY. Android
-returns the enhanced 60-byte big-endian payload below. A 24-byte legacy payload
-is still accepted by the Windows host for compatibility:
+returns the 92-byte big-endian playback-progress payload below. The Windows
+host still accepts the 24-byte legacy and 60-byte enhanced prefixes for
+compatibility:
 
 | Offset | Size | Field |
 |---:|---:|---|
@@ -94,9 +95,15 @@ is still accepted by the Windows host for compatibility:
 | 48 | 4 | Current music-stream volume |
 | 52 | 4 | Maximum music-stream volume |
 | 56 | 4 | Queue high-water mark in frames |
+| 60 | 8 | Total PCM frames successfully written to AudioTrack |
+| 68 | 8 | Cumulative AudioTrack playback-head frames, including 32-bit wrap handling |
+| 76 | 4 | Milliseconds since the last successful AudioTrack write |
+| 80 | 4 | Milliseconds since the playback head last advanced |
+| 84 | 4 | Current AudioTrack play state |
+| 88 | 4 | Actual AudioTrack performance mode after compatibility fallback |
 
 This response also acts as the active heartbeat. The Windows native layer
-validates the exact 24- or 60-byte length before decoding and exposes these
+validates the exact 24-, 60-, or 92-byte length before decoding and exposes these
 counters through the FFI diagnostics API. PING/PONG remains supported for
 protocol tests and future peers.
 
@@ -108,7 +115,7 @@ normal sequence numbers are strictly increasing for the lifetime of one
 connection; a terminal `ERROR` may use reserved sequence `0`.
 Focus, route, and queue state are reported in enhanced STATS rather than as
 separate control messages. The Windows host requires companion application
-exactly version code 5, requires the installed base APK SHA-256 to exactly
+exactly version code 6, requires the installed base APK SHA-256 to exactly
 match the APK bundled with that host build, and validates READY fields before
 starting capture. A fatal handshake ERROR is reported to the Dart supervisor
 immediately rather than waiting for the connection deadline.

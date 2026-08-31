@@ -53,6 +53,9 @@ class FakeAdbController implements AdbController {
   @override
   String get executablePath => 'fake-adb.exe';
 
+  @override
+  List<String> get diagnosticLines => const ['adb_test_controller=true'];
+
   void publish(List<DeviceModel> devices) {
     snapshot = devices;
     _changes.add(null);
@@ -184,6 +187,18 @@ class FakeAudioCaptureController implements AudioCaptureController {
   @override
   int get androidQueueHighWaterFrames => 0;
   @override
+  int get androidWrittenFrames => 0;
+  @override
+  int get androidPlaybackHeadFrames => 0;
+  @override
+  int get androidLastWriteProgressAgeMilliseconds => 0;
+  @override
+  int get androidLastPlaybackAdvanceAgeMilliseconds => 0;
+  @override
+  int get androidPlayState => 0;
+  @override
+  int get androidPerformanceMode => 0;
+  @override
   int get hostQueueFrames => 0;
   @override
   int get hostQueueHighWaterFrames => 0;
@@ -212,6 +227,14 @@ class FakeAudioCaptureController implements AudioCaptureController {
   int get endpointCatchUpFrames => 0;
   @override
   int get endpointQueueHighWaterFrames => 0;
+  @override
+  int get capturedFrames => 0;
+  @override
+  int get capturePeakPermille => 0;
+  @override
+  int get captureRmsPermille => 0;
+  @override
+  int get lastNonSilentAgeMilliseconds => 0xFFFFFFFF;
 
   @override
   bool initialize() {
@@ -303,6 +326,60 @@ Future<void> waitUntil(
 }
 
 void main() {
+  group('failure retry classification', () {
+    test('unknown launch failures remain transient', () {
+      expect(
+        classifyFailure(
+          const UiError(
+            type: UiErrorType.companionLaunchFailed,
+            exception: 'ADB transport closed temporarily',
+          ),
+        ),
+        FailureDisposition.transient,
+      );
+    });
+
+    test('focus and persistent speaker-route failures stop for user action', () {
+      expect(
+        classifyFailure(
+          const UiError(
+            type: UiErrorType.captureStopped,
+            exception: 'Android audio focus was lost',
+          ),
+        ),
+        FailureDisposition.needsUserAction,
+      );
+      expect(
+        classifyFailure(
+          const UiError(
+            type: UiErrorType.captureStopped,
+            exception:
+                'Android routed PC audio to Bluetooth instead of the phone speaker',
+          ),
+        ),
+        FailureDisposition.environmental,
+      );
+    });
+
+    test('protocol and package failures fail closed', () {
+      expect(
+        classifyFailure(
+          const UiError(
+            type: UiErrorType.transportHandshakeFailed,
+            exception: 'Unsupported protocol version 2',
+          ),
+        ),
+        FailureDisposition.fatal,
+      );
+      expect(
+        classifyFailure(
+          const UiError(type: UiErrorType.packageValidationFailed),
+        ),
+        FailureDisposition.fatal,
+      );
+    });
+  });
+
   late FakeAdbController adb;
   late FakeAudioCaptureController audio;
   late MemoryConnectionPreferences preferences;
@@ -509,7 +586,7 @@ void main() {
   );
 
   test(
-    'fatal native handshake errors are surfaced without waiting for timeout',
+    'persistent speaker-route errors stop instead of retrying pointlessly',
     () async {
       adb.snapshot = [usbPhone()];
       audio.autoReady = false;
@@ -527,7 +604,7 @@ void main() {
         () =>
             dataSource.lastError?.type ==
                 UiErrorType.transportHandshakeFailed &&
-            dataSource.overallPhase == ConnectionPhase.reconnecting,
+            dataSource.overallPhase == ConnectionPhase.failed,
       );
 
       expect(dataSource.lastError?.nativeError?.code, 2107);
@@ -536,6 +613,7 @@ void main() {
         contains('built-in speaker unavailable'),
       );
       expect(dataSource.getConnectState('USB123'), 0);
+      expect(dataSource.takePendingError(), isNotNull);
     },
   );
 
