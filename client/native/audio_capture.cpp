@@ -52,6 +52,7 @@ typedef struct AUDIOCLIENT_ACTIVATION_PARAMS {
 #include <vector>
 
 #include "wire_protocol.h"
+#include "audio_mixer.h"
 
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
@@ -60,6 +61,7 @@ typedef struct AUDIOCLIENT_ACTIVATION_PARAMS {
 namespace {
 
 constexpr size_t kMaxQueuedChunks = 8;
+constexpr size_t kAudioChunkPoolSize = kMaxQueuedChunks + 1;
 constexpr uint32_t kSampleRate = 48000;
 constexpr uint16_t kChannels = 2;
 constexpr uint16_t kBitsPerSample = 16;
@@ -68,6 +70,8 @@ constexpr DWORD kMixerPeriodMilliseconds = 10;
 constexpr size_t kMixerFrames =
     kSampleRate * kMixerPeriodMilliseconds / 1000;
 constexpr size_t kMixerSamples = kMixerFrames * kChannels;
+constexpr size_t kFrameBytes = kChannels * (kBitsPerSample / 8);
+constexpr size_t kMaxHostQueueFrames = kSampleRate * 40 / 1000;
 constexpr size_t kMaxEndpointQueueFrames = kSampleRate / 10;
 constexpr size_t kEndpointBufferSamples =
     kMaxEndpointQueueFrames * kChannels;
@@ -100,6 +104,19 @@ std::atomic<uint64_t> g_androidReceivedFrames{0};
 std::atomic<uint64_t> g_androidDroppedFrames{0};
 std::atomic<uint32_t> g_androidQueueDepth{0};
 std::atomic<uint32_t> g_androidBufferFrames{0};
+std::atomic<uint32_t> g_androidQueueFrames{0};
+std::atomic<uint32_t> g_androidBufferCapacityFrames{0};
+std::atomic<uint32_t> g_androidStartThresholdFrames{0};
+std::atomic<uint32_t> g_androidUnderrunCount{0};
+std::atomic<uint32_t> g_androidRoutedDeviceType{0};
+std::atomic<uint32_t> g_androidFocusState{0};
+std::atomic<uint32_t> g_androidMediaVolume{0};
+std::atomic<uint32_t> g_androidMediaVolumeMax{0};
+std::atomic<uint32_t> g_androidQueueHighWaterFrames{0};
+std::atomic<uint32_t> g_hostQueueFrames{0};
+std::atomic<uint32_t> g_hostQueueHighWaterFrames{0};
+std::atomic<uint64_t> g_transportBytesSent{0};
+std::atomic<uint32_t> g_heartbeatRttMilliseconds{0};
 std::atomic<uint32_t> g_captureMode{static_cast<uint32_t>(CaptureMode::kNone)};
 std::atomic<long> g_globalLoopbackHresult{S_OK};
 std::atomic<uint32_t> g_activeEndpointCount{0};
@@ -107,6 +124,8 @@ std::atomic<uint64_t> g_endpointDroppedFrames{0};
 std::atomic<uint64_t> g_endpointUnderrunFrames{0};
 std::atomic<uint64_t> g_endpointDiscontinuities{0};
 std::atomic<uint32_t> g_endpointRebuildCount{0};
+std::atomic<uint64_t> g_endpointCatchUpFrames{0};
+std::atomic<uint32_t> g_endpointQueueHighWaterFrames{0};
 std::atomic<SOCKET> g_transportSocket{INVALID_SOCKET};
 
 HANDLE g_transportThread = nullptr;
@@ -121,7 +140,46 @@ ConnectCallback g_connectCallback = nullptr;
 
 std::mutex g_queueMutex;
 std::condition_variable g_queueCondition;
-std::deque<std::vector<uint8_t>> g_audioQueue;
+
+template <size_t Capacity>
+struct IndexRing {
+    std::array<size_t, Capacity> values{};
+    size_t head = 0;
+    size_t count = 0;
+
+    bool empty() const { return count == 0; }
+    bool full() const { return count == Capacity; }
+
+    bool push(size_t value) {
+        if (full()) return false;
+        values[(head + count) % Capacity] = value;
+        ++count;
+        return true;
+    }
+
+    size_t pop() {
+        const size_t value = values[head];
+        head = (head + 1) % Capacity;
+        --count;
+        return value;
+    }
+
+    void clear() {
+        head = 0;
+        count = 0;
+    }
+};
+
+struct AudioChunk {
+    std::array<uint8_t, kMaxPcmPayload> bytes{};
+    size_t length = 0;
+    size_t frames = 0;
+};
+
+std::array<AudioChunk, kAudioChunkPoolSize> g_audioChunkPool{};
+IndexRing<kAudioChunkPoolSize> g_freeAudioChunks;
+IndexRing<kAudioChunkPoolSize> g_readyAudioChunks;
+bool g_audioPoolInitialized = false;
 
 std::mutex g_errorMutex;
 int g_lastErrorCode = 0;
@@ -154,6 +212,14 @@ void ClearError() {
     g_lastErrorMessage[0] = '\0';
 }
 
+template <typename Value>
+void UpdateAtomicMaximum(std::atomic<Value>* target, Value candidate) {
+    Value current = target->load();
+    while (candidate > current &&
+           !target->compare_exchange_weak(current, candidate)) {
+    }
+}
+
 std::string HresultMessage(const char* operation, HRESULT result) {
     char buffer[160]{};
     _snprintf_s(buffer, sizeof(buffer), _TRUNCATE, "%s failed (HRESULT 0x%08lX)",
@@ -166,6 +232,7 @@ bool SendAll(SOCKET socket, const uint8_t* data, size_t length) {
         const int batch = length > static_cast<size_t>(INT_MAX) ? INT_MAX : static_cast<int>(length);
         const int sent = send(socket, reinterpret_cast<const char*>(data), batch, 0);
         if (sent <= 0) return false;
+        g_transportBytesSent.fetch_add(static_cast<uint64_t>(sent));
         data += sent;
         length -= static_cast<size_t>(sent);
     }
@@ -234,29 +301,103 @@ void CloseTransportSocket() {
     }
 }
 
+void ResetAudioQueueLocked() {
+    g_freeAudioChunks.clear();
+    g_readyAudioChunks.clear();
+    for (size_t index = 0; index < g_audioChunkPool.size(); ++index) {
+        g_audioChunkPool[index].length = 0;
+        g_audioChunkPool[index].frames = 0;
+        g_freeAudioChunks.push(index);
+    }
+    g_audioPoolInitialized = true;
+    g_hostQueueFrames.store(0);
+}
+
 void ClearQueue() {
     std::lock_guard<std::mutex> lock(g_queueMutex);
-    g_audioQueue.clear();
+    ResetAudioQueueLocked();
+}
+
+void DiscardQueuedAudio() {
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    while (!g_readyAudioChunks.empty()) {
+        const size_t index = g_readyAudioChunks.pop();
+        g_audioChunkPool[index].length = 0;
+        g_audioChunkPool[index].frames = 0;
+        g_freeAudioChunks.push(index);
+        g_droppedChunks.fetch_add(1);
+    }
+    // A chunk already popped by the transport thread remains in-flight and is
+    // intentionally not touched. It will return to the free ring when its
+    // send completes, so a capture restart cannot reuse memory concurrently.
+    g_hostQueueFrames.store(0);
 }
 
 void EnqueuePcm(const uint8_t* data, size_t length) {
+    if (data == nullptr && length != 0) return;
     size_t offset = 0;
     while (offset < length && g_captureRunning.load()) {
         size_t chunkLength = length - offset;
         if (chunkLength > kMaxPcmPayload) chunkLength = kMaxPcmPayload;
-        chunkLength -= chunkLength % (kChannels * (kBitsPerSample / 8));
+        chunkLength -= chunkLength % kFrameBytes;
         if (chunkLength == 0) return;
-        std::vector<uint8_t> chunk(data + offset, data + offset + chunkLength);
+        const size_t chunkFrames = chunkLength / kFrameBytes;
         {
             std::lock_guard<std::mutex> lock(g_queueMutex);
-            if (g_audioQueue.size() >= kMaxQueuedChunks) {
-                g_audioQueue.pop_front();
+            if (!g_audioPoolInitialized) ResetAudioQueueLocked();
+            while (!g_readyAudioChunks.empty() &&
+                   (g_readyAudioChunks.count >= kMaxQueuedChunks ||
+                    g_hostQueueFrames.load() + chunkFrames >
+                        kMaxHostQueueFrames)) {
+                const size_t discardedIndex = g_readyAudioChunks.pop();
+                const size_t discardedFrames =
+                    g_audioChunkPool[discardedIndex].frames;
+                g_hostQueueFrames.fetch_sub(
+                    static_cast<uint32_t>(discardedFrames));
+                g_audioChunkPool[discardedIndex].length = 0;
+                g_audioChunkPool[discardedIndex].frames = 0;
+                g_freeAudioChunks.push(discardedIndex);
                 g_droppedChunks.fetch_add(1);
             }
-            g_audioQueue.push_back(std::move(chunk));
+            if (g_freeAudioChunks.empty()) {
+                // One buffer may be owned by the transport thread. Reuse the
+                // oldest queued buffer instead of allocating on the capture
+                // thread or blocking system-audio capture.
+                if (g_readyAudioChunks.empty()) {
+                    g_droppedChunks.fetch_add(1);
+                    offset += chunkLength;
+                    continue;
+                }
+                const size_t discardedIndex = g_readyAudioChunks.pop();
+                g_hostQueueFrames.fetch_sub(
+                    static_cast<uint32_t>(g_audioChunkPool[discardedIndex].frames));
+                g_freeAudioChunks.push(discardedIndex);
+                g_droppedChunks.fetch_add(1);
+            }
+            const size_t chunkIndex = g_freeAudioChunks.pop();
+            AudioChunk& chunk = g_audioChunkPool[chunkIndex];
+            memcpy(chunk.bytes.data(), data + offset, chunkLength);
+            chunk.length = chunkLength;
+            chunk.frames = chunkFrames;
+            g_readyAudioChunks.push(chunkIndex);
+            const uint32_t queuedFrames = g_hostQueueFrames.fetch_add(
+                static_cast<uint32_t>(chunkFrames)) +
+                static_cast<uint32_t>(chunkFrames);
+            UpdateAtomicMaximum(&g_hostQueueHighWaterFrames, queuedFrames);
         }
         g_queueCondition.notify_one();
         offset += chunkLength;
+    }
+}
+
+void EnqueueSilence(size_t byteCount) {
+    static const std::array<uint8_t, kMaxPcmPayload> silence{};
+    while (byteCount > 0 && g_captureRunning.load()) {
+        size_t length = byteCount < silence.size() ? byteCount : silence.size();
+        length -= length % kFrameBytes;
+        if (length == 0) return;
+        EnqueuePcm(silence.data(), length);
+        byteCount -= length;
     }
 }
 
@@ -433,7 +574,8 @@ struct EndpointCapture {
     IAudioCaptureClient* captureClient = nullptr;
     HANDLE captureEvent = nullptr;
     bool audioStarted = false;
-    bool hasSeenPacket = false;
+    bool hasSeenNonSilentPacket = false;
+    uint64_t lastNonSilentPacketMillis = 0;
     // A fixed-capacity ring keeps packet ingestion allocation-free after
     // endpoint setup. The capture thread is the sole owner of these fields.
     std::unique_ptr<int16_t[]> sampleBuffer;
@@ -459,6 +601,8 @@ void CloseEndpoint(EndpointCapture* endpoint) {
         endpoint->captureEvent = nullptr;
     }
     endpoint->audioStarted = false;
+    endpoint->hasSeenNonSilentPacket = false;
+    endpoint->lastNonSilentPacketMillis = 0;
     endpoint->sampleBuffer.reset();
     endpoint->readSample = 0;
     endpoint->sampleCount = 0;
@@ -660,7 +804,10 @@ void AppendEndpointPacket(EndpointCapture* endpoint, const BYTE* data,
                           UINT32 frames, bool silent) {
     if (endpoint == nullptr || endpoint->sampleBuffer == nullptr ||
         frames == 0) return;
-    endpoint->hasSeenPacket = true;
+    if (!silent && data != nullptr) {
+        endpoint->hasSeenNonSilentPacket = true;
+        endpoint->lastNonSilentPacketMillis = GetTickCount64();
+    }
 
     size_t firstFrame = 0;
     if (frames > kMaxEndpointQueueFrames) {
@@ -692,6 +839,9 @@ void AppendEndpointPacket(EndpointCapture* endpoint, const BYTE* data,
             ++endpoint->sampleCount;
         }
     }
+    UpdateAtomicMaximum(
+        &g_endpointQueueHighWaterFrames,
+        static_cast<uint32_t>(endpoint->sampleCount / kChannels));
 }
 
 HRESULT DrainEndpoint(EndpointCapture* endpoint) {
@@ -721,20 +871,30 @@ HRESULT DrainEndpoint(EndpointCapture* endpoint) {
     return result;
 }
 
-void MixEndpointPeriod(std::vector<EndpointCapture>* endpoints) {
+void MixEndpointPeriod(
+        std::vector<EndpointCapture>* endpoints, bool catchUpOnly = false) {
     std::array<int32_t, kMixerSamples> accumulator{};
     std::array<int16_t, kMixerSamples> mixed{};
+    std::array<uint16_t, kMixerFrames> contributors{};
+    const uint64_t nowMillis = GetTickCount64();
 
     for (auto& endpoint : *endpoints) {
         if (endpoint.sampleBuffer == nullptr) continue;
         const size_t availableFrames = endpoint.sampleCount / kChannels;
+        if (catchUpOnly && availableFrames < kMixerFrames * 2) continue;
         const size_t framesToMix = availableFrames < kMixerFrames
             ? availableFrames
             : kMixerFrames;
-        if (endpoint.hasSeenPacket && framesToMix < kMixerFrames) {
+        if (!catchUpOnly && audioshare::mixer::ShouldCountUnderrun(
+                endpoint.hasSeenNonSilentPacket,
+                endpoint.lastNonSilentPacketMillis,
+                nowMillis,
+                framesToMix,
+                kMixerFrames)) {
             g_endpointUnderrunFrames.fetch_add(kMixerFrames - framesToMix);
         }
         for (size_t frame = 0; frame < framesToMix; ++frame) {
+            ++contributors[frame];
             for (size_t channel = 0; channel < kChannels; ++channel) {
                 accumulator[frame * kChannels + channel] +=
                     endpoint.sampleBuffer[endpoint.readSample];
@@ -743,13 +903,15 @@ void MixEndpointPeriod(std::vector<EndpointCapture>* endpoints) {
                 --endpoint.sampleCount;
             }
         }
+        if (catchUpOnly) g_endpointCatchUpFrames.fetch_add(framesToMix);
     }
 
-    for (size_t sample = 0; sample < mixed.size(); ++sample) {
-        int32_t value = accumulator[sample];
-        if (value > INT16_MAX) value = INT16_MAX;
-        if (value < INT16_MIN) value = INT16_MIN;
-        mixed[sample] = static_cast<int16_t>(value);
+    for (size_t frame = 0; frame < kMixerFrames; ++frame) {
+        for (size_t channel = 0; channel < kChannels; ++channel) {
+            const size_t sample = frame * kChannels + channel;
+            mixed[sample] = audioshare::mixer::AverageMixedSample(
+                accumulator[sample], contributors[frame]);
+        }
     }
     EnqueuePcm(
         reinterpret_cast<const uint8_t*>(mixed.data()),
@@ -833,9 +995,10 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
             static_cast<uint32_t>(CaptureMode::kMultiEndpointLoopback));
     }
 
+    std::vector<HANDLE> waitHandles;
+    waitHandles.reserve(kMaxMultiEndpointCount + 3);
     while (SUCCEEDED(result) && g_captureRunning.load()) {
-        std::vector<HANDLE> waitHandles;
-        waitHandles.reserve(endpoints.size() + 3);
+        waitHandles.clear();
         waitHandles.push_back(g_stopEvent);
         waitHandles.push_back(changeEvent);
         // WaitForMultipleObjects returns the lowest-index signaled handle.
@@ -887,7 +1050,11 @@ HRESULT RunMultiEndpointCapture(const WAVEFORMATEX* format) {
                  MaximumQueuedEndpointFrames(endpoints) >=
                      kMixerFrames * 2;
                  ++period) {
-                MixEndpointPeriod(&endpoints);
+                // Catch up only endpoints that individually accumulated at
+                // least two periods. A faster device must not drain a slower
+                // device and fabricate underruns merely because their hardware
+                // clocks differ.
+                MixEndpointPeriod(&endpoints, true);
             }
         } else if (signaledIndex >= endpointStartIndex &&
                    signaledIndex < waitHandles.size()) {
@@ -994,6 +1161,7 @@ DWORD WINAPI TransportThread(LPVOID) {
                 } else if (!DecodeReady(
                                ready.payload.data(), ready.payload.size(),
                                &accepted) ||
+                           ready.sequence != 1 ||
                            accepted.sampleRate != kSampleRate ||
                            accepted.channels != kChannels ||
                            accepted.bitsPerSample != kBitsPerSample ||
@@ -1034,27 +1202,46 @@ DWORD WINAPI TransportThread(LPVOID) {
         callback("ready");
     }
     uint32_t sequence = 2;
+    uint32_t lastInboundSequence = ready.sequence;
     auto nextPing = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     auto lastAndroidResponse = std::chrono::steady_clock::now();
+    uint32_t pendingStatsSequence = 0;
+    auto pendingStatsSent = std::chrono::steady_clock::time_point{};
     while (g_transportRunning.load()) {
-        std::vector<uint8_t> chunk;
+        size_t chunkIndex = g_audioChunkPool.size();
         {
             std::unique_lock<std::mutex> lock(g_queueMutex);
             g_queueCondition.wait_for(lock, std::chrono::milliseconds(100), [] {
-                return !g_audioQueue.empty() || !g_transportRunning.load();
+                return !g_readyAudioChunks.empty() || !g_transportRunning.load();
             });
-            if (!g_audioQueue.empty()) {
-                chunk = std::move(g_audioQueue.front());
-                g_audioQueue.pop_front();
+            if (!g_readyAudioChunks.empty()) {
+                chunkIndex = g_readyAudioChunks.pop();
+                g_hostQueueFrames.fetch_sub(static_cast<uint32_t>(
+                    g_audioChunkPool[chunkIndex].frames));
             }
         }
-        if (!chunk.empty() && !SendFrame(socket, kTypePcm, sequence++, chunk.data(), chunk.size())) {
-            if (g_transportRunning.load()) SetError(2103, "Audio transport write failed");
-            break;
+        if (chunkIndex < g_audioChunkPool.size()) {
+            AudioChunk& chunk = g_audioChunkPool[chunkIndex];
+            const bool sent = SendFrame(
+                socket, kTypePcm, sequence++, chunk.bytes.data(), chunk.length);
+            {
+                std::lock_guard<std::mutex> lock(g_queueMutex);
+                chunk.length = 0;
+                chunk.frames = 0;
+                g_freeAudioChunks.push(chunkIndex);
+            }
+            if (!sent) {
+                if (g_transportRunning.load()) {
+                    SetError(2103, "Audio transport write failed");
+                }
+                break;
+            }
         }
         const auto now = std::chrono::steady_clock::now();
-        if (now >= nextPing) {
-            if (!SendFrame(socket, kTypeStats, sequence++, nullptr, 0)) {
+        if (now >= nextPing && pendingStatsSequence == 0) {
+            pendingStatsSequence = sequence++;
+            pendingStatsSent = now;
+            if (!SendFrame(socket, kTypeStats, pendingStatsSequence, nullptr, 0)) {
                 if (g_transportRunning.load()) SetError(2106, "Android heartbeat write failed");
                 break;
             }
@@ -1075,6 +1262,10 @@ DWORD WINAPI TransportThread(LPVOID) {
             ReceivedFrame inbound;
             if (!ReceiveFrame(socket, &inbound)) break;
             lastAndroidResponse = std::chrono::steady_clock::now();
+            // ERROR is terminal and may use the reserved sequence 0 so a
+            // playback failure can be reported even when it occurred outside
+            // the normal request/response sequence. Handle it before the
+            // monotonic check rather than masking the useful diagnostic.
             if (inbound.type == kTypeError) {
                 const std::string detail = SanitizeAndroidError(inbound.payload);
                 SetError(2107, detail.empty()
@@ -1082,7 +1273,18 @@ DWORD WINAPI TransportThread(LPVOID) {
                     : "Android playback error: " + detail);
                 break;
             }
+            if (!IsStrictlyIncreasingSequence(
+                    lastInboundSequence, inbound.sequence)) {
+                SetError(2115, "Android returned a non-increasing sequence");
+                break;
+            }
+            lastInboundSequence = inbound.sequence;
             if (inbound.type == kTypeStats) {
+                if (pendingStatsSequence == 0 ||
+                    inbound.sequence != pendingStatsSequence) {
+                    SetError(2114, "Android returned an unexpected STATS sequence");
+                    break;
+                }
                 PlaybackStats stats;
                 if (!DecodePlaybackStats(
                         inbound.payload.data(), inbound.payload.size(), &stats)) {
@@ -1093,6 +1295,24 @@ DWORD WINAPI TransportThread(LPVOID) {
                 g_androidDroppedFrames.store(stats.droppedFrames);
                 g_androidQueueDepth.store(stats.queueDepth);
                 g_androidBufferFrames.store(stats.bufferFrames);
+                g_androidQueueFrames.store(stats.queueFrames);
+                g_androidBufferCapacityFrames.store(
+                    stats.bufferCapacityFrames);
+                g_androidStartThresholdFrames.store(
+                    stats.startThresholdFrames);
+                g_androidUnderrunCount.store(stats.underrunCount);
+                g_androidRoutedDeviceType.store(stats.routedDeviceType);
+                g_androidFocusState.store(stats.focusState);
+                g_androidMediaVolume.store(stats.mediaVolume);
+                g_androidMediaVolumeMax.store(stats.mediaVolumeMax);
+                g_androidQueueHighWaterFrames.store(
+                    stats.queueHighWaterFrames);
+                const auto rtt = std::chrono::duration_cast<
+                    std::chrono::milliseconds>(
+                        lastAndroidResponse - pendingStatsSent).count();
+                g_heartbeatRttMilliseconds.store(static_cast<uint32_t>(
+                    rtt < 0 ? 0 : (rtt > UINT32_MAX ? UINT32_MAX : rtt)));
+                pendingStatsSequence = 0;
             } else if (inbound.type != kTypePong) {
                 SetError(2108, "Android sent an unexpected protocol message");
                 break;
@@ -1257,8 +1477,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
                 if (FAILED(result)) break;
                 const size_t byteCount = static_cast<size_t>(frames) * format.nBlockAlign;
                 if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 || data == nullptr) {
-                    std::vector<uint8_t> silence(byteCount, 0);
-                    EnqueuePcm(silence.data(), silence.size());
+                    EnqueueSilence(byteCount);
                 } else {
                     EnqueuePcm(data, byteCount);
                 }
@@ -1320,6 +1539,18 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
     g_androidDroppedFrames.store(0);
     g_androidQueueDepth.store(0);
     g_androidBufferFrames.store(0);
+    g_androidQueueFrames.store(0);
+    g_androidBufferCapacityFrames.store(0);
+    g_androidStartThresholdFrames.store(0);
+    g_androidUnderrunCount.store(0);
+    g_androidRoutedDeviceType.store(0);
+    g_androidFocusState.store(0);
+    g_androidMediaVolume.store(0);
+    g_androidMediaVolumeMax.store(0);
+    g_androidQueueHighWaterFrames.store(0);
+    g_hostQueueHighWaterFrames.store(0);
+    g_transportBytesSent.store(0);
+    g_heartbeatRttMilliseconds.store(0);
     g_captureMode.store(static_cast<uint32_t>(CaptureMode::kNone));
     g_globalLoopbackHresult.store(S_OK);
     g_activeEndpointCount.store(0);
@@ -1327,6 +1558,8 @@ extern "C" __declspec(dllexport) int AudioCapture_Connect(int port, const char* 
     g_endpointUnderrunFrames.store(0);
     g_endpointDiscontinuities.store(0);
     g_endpointRebuildCount.store(0);
+    g_endpointCatchUpFrames.store(0);
+    g_endpointQueueHighWaterFrames.store(0);
     g_connected.store(false);
     if (g_stopEvent != nullptr) ResetEvent(g_stopEvent);
     {
@@ -1362,7 +1595,9 @@ extern "C" __declspec(dllexport) int AudioCapture_Start() {
         SetError(2005, "Previous capture thread did not stop in time");
         return 0;
     }
-    ClearQueue();
+    // Discard stale queued audio without resetting the pool: the transport
+    // thread is still alive and may own one in-flight chunk.
+    DiscardQueuedAudio();
     if (g_stopEvent != nullptr) ResetEvent(g_stopEvent);
     // Closing the transport and starting capture can race on different
     // threads. Recheck after ResetEvent so an already-signaled transport stop
@@ -1394,9 +1629,9 @@ extern "C" __declspec(dllexport) void AudioCapture_Stop() {
     if (g_stopEvent != nullptr) SetEvent(g_stopEvent);
     CloseTransportSocket();
     g_queueCondition.notify_all();
-    ReapThread(&g_captureThread, 250);
-    ReapThread(&g_transportThread, 250);
-    ClearQueue();
+    const bool captureStopped = ReapThread(&g_captureThread, 250);
+    const bool transportStopped = ReapThread(&g_transportThread, 250);
+    if (captureStopped && transportStopped) ClearQueue();
 }
 
 extern "C" __declspec(dllexport) void AudioCapture_Cleanup() {
@@ -1407,6 +1642,7 @@ extern "C" __declspec(dllexport) void AudioCapture_Cleanup() {
         SetError(2007, "Native worker did not stop; shared resources were retained safely");
         return;
     }
+    ClearQueue();
     if (g_stopEvent != nullptr) { CloseHandle(g_stopEvent); g_stopEvent = nullptr; }
     if (g_initialized.exchange(false)) WSACleanup();
     std::lock_guard<std::mutex> lock(g_configMutex);
@@ -1451,6 +1687,58 @@ extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidBufferFrame
     return static_cast<unsigned int>(g_androidBufferFrames.load());
 }
 
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidQueueFrames() {
+    return static_cast<unsigned int>(g_androidQueueFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidBufferCapacityFrames() {
+    return static_cast<unsigned int>(g_androidBufferCapacityFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidStartThresholdFrames() {
+    return static_cast<unsigned int>(g_androidStartThresholdFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidUnderrunCount() {
+    return static_cast<unsigned int>(g_androidUnderrunCount.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidRoutedDeviceType() {
+    return static_cast<unsigned int>(g_androidRoutedDeviceType.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidFocusState() {
+    return static_cast<unsigned int>(g_androidFocusState.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidMediaVolume() {
+    return static_cast<unsigned int>(g_androidMediaVolume.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidMediaVolumeMax() {
+    return static_cast<unsigned int>(g_androidMediaVolumeMax.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetAndroidQueueHighWaterFrames() {
+    return static_cast<unsigned int>(g_androidQueueHighWaterFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetHostQueueFrames() {
+    return static_cast<unsigned int>(g_hostQueueFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetHostQueueHighWaterFrames() {
+    return static_cast<unsigned int>(g_hostQueueHighWaterFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetTransportBytesSent() {
+    return static_cast<unsigned long long>(g_transportBytesSent.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetHeartbeatRttMilliseconds() {
+    return static_cast<unsigned int>(g_heartbeatRttMilliseconds.load());
+}
+
 extern "C" __declspec(dllexport) unsigned int AudioCapture_GetCaptureMode() {
     return static_cast<unsigned int>(g_captureMode.load());
 }
@@ -1477,4 +1765,12 @@ extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointDisc
 
 extern "C" __declspec(dllexport) unsigned int AudioCapture_GetEndpointRebuildCount() {
     return static_cast<unsigned int>(g_endpointRebuildCount.load());
+}
+
+extern "C" __declspec(dllexport) unsigned long long AudioCapture_GetEndpointCatchUpFrames() {
+    return static_cast<unsigned long long>(g_endpointCatchUpFrames.load());
+}
+
+extern "C" __declspec(dllexport) unsigned int AudioCapture_GetEndpointQueueHighWaterFrames() {
+    return static_cast<unsigned int>(g_endpointQueueHighWaterFrames.load());
 }

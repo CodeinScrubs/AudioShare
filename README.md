@@ -4,11 +4,13 @@ Stream **all Windows system audio** to an Android phone speaker over a USB ADB
 connection. This fork is being specialized for a portable, standard-user,
 firewall-independent Windows workflow.
 
-Development status: the Android companion passes clean unit, lint, debug, and
-release builds. A real Android 16 emulator passed a cold-install, authenticated
-ADB-forwarded 60-second display-confirmed-off stream with 2,880,000 exact PCM
-frames, enforced speaker route, zero drops, wake-lock continuity, and exact
-cleanup. The Windows capture hierarchy passes strict
+Development status: the Android companion passes clean unit, lint, and debug
+builds; CI also exercises a release build with an ephemeral test signer. A
+real Android 16 emulator passed a cold-install, authenticated
+ADB-forwarded stream with enforced speaker route, wake-lock continuity, and
+exact cleanup. Headless virtual audio can underrun, so the current Android
+hardening pass treats zero-drop timing as a physical-device gate. The Windows
+capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
 non-zero PCM. Flutter analysis and 20 supervisor/lifecycle/security tests pass. A physical
 Samsung audible-output/USB-cable run, restricted-PC firewall check, measured
@@ -90,7 +92,7 @@ flutter test
 flutter build windows --debug
 ```
 
-Debug builds bundle the clearly labeled version-code 2 debug companion APK. A
+Debug builds bundle the clearly labeled version-code 3 debug companion APK. A
 distributable release must use a stable signing key and provide both the signed
 APK and its pinned signer-certificate SHA-256 explicitly. Configuration fails
 unless Android SDK `apkanalyzer` and `apksigner` confirm the signature, exact

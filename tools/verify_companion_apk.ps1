@@ -96,6 +96,43 @@ if ($actualVersion -lt $MinimumVersionCode) {
     throw "Companion version code $actualVersion is below required $MinimumVersionCode."
 }
 
+$debuggableOutput = @(Invoke-CheckedAndroidTool -Tool $apkAnalyzer `
+    -Arguments @('manifest', 'debuggable', $resolvedApk) `
+    -Description 'Read companion debuggable flag')
+if ($debuggableOutput[-1].ToLowerInvariant() -cne 'false') {
+    throw 'Release companion must declare android:debuggable=false.'
+}
+
+$permissionOutput = @(Invoke-CheckedAndroidTool -Tool $apkAnalyzer `
+    -Arguments @('manifest', 'permissions', $resolvedApk) `
+    -Description 'Read companion permissions')
+$actualPermissions = @(
+    $permissionOutput |
+        Where-Object { $_ -match '^android[.]permission[.]' } |
+        Select-Object -Unique
+)
+$allowedPermissions = @(
+    'android.permission.FOREGROUND_SERVICE',
+    'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+    'android.permission.POST_NOTIFICATIONS',
+    'android.permission.WAKE_LOCK'
+)
+$unexpectedPermissions = @(
+    $actualPermissions | Where-Object { $_ -cnotin $allowedPermissions }
+)
+if ($unexpectedPermissions.Count -ne 0) {
+    throw "Release companion requests forbidden permissions: $($unexpectedPermissions -join ', ')."
+}
+foreach ($requiredPermission in @(
+    'android.permission.FOREGROUND_SERVICE',
+    'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+    'android.permission.WAKE_LOCK'
+)) {
+    if ($requiredPermission -cnotin $actualPermissions) {
+        throw "Release companion is missing required permission '$requiredPermission'."
+    }
+}
+
 $normalizedExpectedCertificate = ($ExpectedCertificateSha256 -replace '[^0-9A-Fa-f]', '').ToLowerInvariant()
 if ($normalizedExpectedCertificate -notmatch '^[0-9a-f]{64}$') {
     throw 'Expected certificate SHA-256 must contain exactly 64 hexadecimal digits.'
@@ -119,4 +156,4 @@ if ($actualCertificates[0] -cne $normalizedExpectedCertificate) {
     throw "Wrong companion signing certificate. Expected '$normalizedExpectedCertificate', found '$($actualCertificates[0])'."
 }
 $sha256 = Get-Sha256Hex -Path $resolvedApk
-Write-Output "Verified signed companion: package=$actualPackage versionCode=$actualVersion certificateSha256=$normalizedExpectedCertificate sha256=$sha256"
+Write-Output "Verified signed companion: package=$actualPackage versionCode=$actualVersion debuggable=false permissions=$($actualPermissions.Count) certificateSha256=$normalizedExpectedCertificate sha256=$sha256"

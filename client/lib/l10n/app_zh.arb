@@ -2,6 +2,7 @@
   "@@locale": "zh",
   "appTitle": "AudioShare",
   "ok": "确定",
+  "streamingDiagnostics": "传输诊断",
   "noDevices": "未找到设备",
   "waitingForPhone": "请通过 USB 连接 Android 手机",
   "phoneReady": "已授权的 USB 手机已就绪",

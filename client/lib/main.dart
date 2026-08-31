@@ -345,6 +345,13 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
                       ),
                     ),
                   ),
+                  if (connectState == 2)
+                    IconButton(
+                      tooltip: l10n.streamingDiagnostics,
+                      onPressed: () =>
+                          _showStreamingDiagnostics(context, l10n, deviceName),
+                      icon: const Icon(Icons.monitor_heart_outlined),
+                    ),
                   Padding(
                     padding: const EdgeInsets.only(right: 10),
                     child: ElevatedButton(
@@ -398,6 +405,29 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
         return const SizedBox.shrink();
     }
   }
+
+  Future<void> _showStreamingDiagnostics(
+    BuildContext context,
+    AppLocalizations l10n,
+    String deviceName,
+  ) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('${l10n.streamingDiagnostics} — $deviceName'),
+      content: SingleChildScrollView(
+        child: SelectableText(
+          _dataSource.streamingDiagnostics,
+          style: const TextStyle(fontFamily: 'monospace'),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.ok),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildCheckBox(AppLocalizations l10n) {
     return Padding(

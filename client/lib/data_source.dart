@@ -165,6 +165,22 @@ class DataSource extends ChangeNotifier {
   int get androidDroppedFrames => _audioCapture.androidDroppedFrames;
   int get androidQueueDepth => _audioCapture.androidQueueDepth;
   int get androidBufferFrames => _audioCapture.androidBufferFrames;
+  int get androidQueueFrames => _audioCapture.androidQueueFrames;
+  int get androidBufferCapacityFrames =>
+      _audioCapture.androidBufferCapacityFrames;
+  int get androidStartThresholdFrames =>
+      _audioCapture.androidStartThresholdFrames;
+  int get androidUnderrunCount => _audioCapture.androidUnderrunCount;
+  int get androidRoutedDeviceType => _audioCapture.androidRoutedDeviceType;
+  int get androidFocusState => _audioCapture.androidFocusState;
+  int get androidMediaVolume => _audioCapture.androidMediaVolume;
+  int get androidMediaVolumeMax => _audioCapture.androidMediaVolumeMax;
+  int get androidQueueHighWaterFrames =>
+      _audioCapture.androidQueueHighWaterFrames;
+  int get hostQueueFrames => _audioCapture.hostQueueFrames;
+  int get hostQueueHighWaterFrames => _audioCapture.hostQueueHighWaterFrames;
+  int get transportBytesSent => _audioCapture.transportBytesSent;
+  int get heartbeatRttMilliseconds => _audioCapture.heartbeatRttMilliseconds;
   WindowsCaptureMode get captureMode => _audioCapture.captureMode;
   int get globalLoopbackHresult => _audioCapture.globalLoopbackHresult;
   int get activeEndpointCount => _audioCapture.activeEndpointCount;
@@ -172,6 +188,54 @@ class DataSource extends ChangeNotifier {
   int get endpointUnderrunFrames => _audioCapture.endpointUnderrunFrames;
   int get endpointDiscontinuities => _audioCapture.endpointDiscontinuities;
   int get endpointRebuildCount => _audioCapture.endpointRebuildCount;
+  int get endpointCatchUpFrames => _audioCapture.endpointCatchUpFrames;
+  int get endpointQueueHighWaterFrames =>
+      _audioCapture.endpointQueueHighWaterFrames;
+
+  String get streamingDiagnostics {
+    const sampleRate = 48000;
+    String milliseconds(int frames) =>
+        (frames * 1000 / sampleRate).toStringAsFixed(1);
+    final focus = switch (androidFocusState) {
+      1 => 'gained',
+      2 => 'ducked',
+      3 => 'transient_loss',
+      4 => 'permanent_loss',
+      _ => 'none',
+    };
+    final route = switch (androidRoutedDeviceType) {
+      2 => 'built_in_speaker',
+      0 => 'unknown',
+      final type => 'android_output_type_$type',
+    };
+    return [
+      'capture_mode=${captureMode.name}',
+      'active_endpoints=$activeEndpointCount',
+      'host_queue_frames=$hostQueueFrames (${milliseconds(hostQueueFrames)} ms)',
+      'host_queue_high_water_frames=$hostQueueHighWaterFrames (${milliseconds(hostQueueHighWaterFrames)} ms)',
+      'host_dropped_chunks=$droppedNativeChunks',
+      'transport_bytes_sent=$transportBytesSent',
+      'heartbeat_rtt_ms=$heartbeatRttMilliseconds',
+      'android_received_frames=$androidReceivedFrames',
+      'android_dropped_frames=$androidDroppedFrames',
+      'android_queue_chunks=$androidQueueDepth',
+      'android_queue_frames=$androidQueueFrames (${milliseconds(androidQueueFrames)} ms)',
+      'android_queue_high_water_frames=$androidQueueHighWaterFrames (${milliseconds(androidQueueHighWaterFrames)} ms)',
+      'android_buffer_frames=$androidBufferFrames (${milliseconds(androidBufferFrames)} ms)',
+      'android_buffer_capacity_frames=$androidBufferCapacityFrames (${milliseconds(androidBufferCapacityFrames)} ms)',
+      'android_start_threshold_frames=$androidStartThresholdFrames (${milliseconds(androidStartThresholdFrames)} ms)',
+      'android_underruns=$androidUnderrunCount',
+      'android_route=$route',
+      'android_focus=$focus',
+      'android_media_volume=$androidMediaVolume/$androidMediaVolumeMax',
+      'endpoint_queue_high_water_frames=$endpointQueueHighWaterFrames',
+      'endpoint_catch_up_frames=$endpointCatchUpFrames',
+      'endpoint_dropped_frames=$endpointDroppedFrames',
+      'endpoint_underrun_frames=$endpointUnderrunFrames',
+      'endpoint_discontinuities=$endpointDiscontinuities',
+      'endpoint_rebuilds=$endpointRebuildCount',
+    ].join('\n');
+  }
 
   bool isCompanionMissing(String deviceId) =>
       _missingCompanionDeviceIds.contains(deviceId);

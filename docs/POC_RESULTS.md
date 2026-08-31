@@ -5,6 +5,11 @@ global, multi-endpoint, and default fallback capture pass native integration.
 The actual Android app passes ADB-forwarded protocol/playback tests on an Android
 16 emulator. Physical USB-cable and audible phone-speaker acceptance remain open.
 
+Historical note: the deterministic emulator measurements below were recorded
+before the v3 focus/AudioTrack telemetry and 40 ms live-edge hardening. They are
+retained as an audit trail, not as validation of the current binary; rerun the
+smoke harness after rebuilding the current companion.
+
 Recorded: 2026-08-29–31 (Asia/Tehran)
 
 This report distinguishes command-surface/static evidence from an actual

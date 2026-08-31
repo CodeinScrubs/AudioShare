@@ -161,7 +161,6 @@ DWORD WINAPI FakeCompanionThread(LPVOID) {
         return 0;
     }
 
-    uint32_t sequence = 2;
     while (ReceiveAll(client, headerBytes, sizeof(headerBytes))) {
         FrameHeader frame;
         if (!DecodeHeader(headerBytes, sizeof(headerBytes), &frame)) break;
@@ -184,11 +183,12 @@ DWORD WINAPI FakeCompanionThread(LPVOID) {
             WriteU32(stats + 4, static_cast<uint32_t>(frames));
             WriteU32(stats + 16, 0);
             WriteU32(stats + 20, 2880);
-            if (!SendFrame(client, kTypeStats, sequence++, stats, sizeof(stats))) {
+            if (!SendFrame(
+                    client, kTypeStats, frame.sequence, stats, sizeof(stats))) {
                 break;
             }
         } else if (frame.type == kTypePing) {
-            if (!SendFrame(client, kTypePong, sequence++, nullptr, 0)) break;
+            if (!SendFrame(client, kTypePong, frame.sequence, nullptr, 0)) break;
         }
     }
     closesocket(client);

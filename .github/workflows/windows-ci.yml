@@ -54,13 +54,16 @@ jobs:
 
       - name: Build and run native transport regressions with MSVC
         run: |
-          cmake --build build/windows/x64 --config Debug --target wire_protocol_test system_capture_integration_test
+          cmake --build build/windows/x64 --config Debug --target wire_protocol_test audio_mixer_test system_capture_integration_test
           $wireTest = Get-ChildItem build/windows/x64 -Recurse -Filter wire_protocol_test.exe | Select-Object -First 1
+          $mixerTest = Get-ChildItem build/windows/x64 -Recurse -Filter audio_mixer_test.exe | Select-Object -First 1
           $integrationTest = Get-ChildItem build/windows/x64 -Recurse -Filter system_capture_integration_test.exe | Select-Object -First 1
-          if (-not $wireTest -or -not $integrationTest) {
+          if (-not $wireTest -or -not $mixerTest -or -not $integrationTest) {
             throw 'Native regression executables were not produced.'
           }
           & $wireTest.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $mixerTest.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Push-Location $integrationTest.DirectoryName
           try {
@@ -94,7 +97,7 @@ jobs:
             .\tools\verify_companion_apk.ps1 `
               -Apk $env:AUDIOSHARE_COMPANION_APK `
               -ExpectedPackage 'com.audioshare.usbcompanion' `
-              -MinimumVersionCode 2 `
+              -MinimumVersionCode 3 `
               -ExpectedCertificateSha256 ('0' * 64)
             $accepted = $true
           } catch {

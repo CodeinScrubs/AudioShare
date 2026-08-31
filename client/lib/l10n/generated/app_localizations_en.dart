@@ -15,6 +15,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ok => 'OK';
 
   @override
+  String get streamingDiagnostics => 'Streaming diagnostics';
+
+  @override
   String get noDevices => 'No devices found';
 
   @override

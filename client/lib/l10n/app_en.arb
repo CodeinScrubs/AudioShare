@@ -2,6 +2,7 @@
   "@@locale": "en",
   "appTitle": "AudioShare",
   "ok": "OK",
+  "streamingDiagnostics": "Streaming diagnostics",
   "noDevices": "No devices found",
   "waitingForPhone": "Connect an Android phone by USB",
   "phoneReady": "Authorized USB phone is ready",

@@ -20,6 +20,8 @@ constexpr uint16_t kTypeError = 8;
 constexpr size_t kFrameHeaderBytes = 16;
 constexpr size_t kTokenBytes = 32;
 constexpr size_t kHelloBytes = 40;
+constexpr size_t kLegacyPlaybackStatsBytes = 24;
+constexpr size_t kEnhancedPlaybackStatsBytes = 60;
 constexpr size_t kMaxControlPayload = 64 * 1024;
 constexpr size_t kMaxPcmPayload = 8 * 1024;
 
@@ -80,15 +82,40 @@ struct PlaybackStats {
     uint64_t droppedFrames = 0;
     uint32_t queueDepth = 0;
     uint32_t bufferFrames = 0;
+    uint32_t queueFrames = 0;
+    uint32_t bufferCapacityFrames = 0;
+    uint32_t startThresholdFrames = 0;
+    uint32_t underrunCount = 0;
+    uint32_t routedDeviceType = 0;
+    uint32_t focusState = 0;
+    uint32_t mediaVolume = 0;
+    uint32_t mediaVolumeMax = 0;
+    uint32_t queueHighWaterFrames = 0;
 };
 
 inline bool DecodePlaybackStats(
         const uint8_t* payload, size_t length, PlaybackStats* stats) {
-    if (payload == nullptr || stats == nullptr || length != 24) return false;
+    if (payload == nullptr || stats == nullptr ||
+        (length != kLegacyPlaybackStatsBytes &&
+         length != kEnhancedPlaybackStatsBytes)) {
+        return false;
+    }
+    *stats = {};
     stats->receivedFrames = ReadU64(payload);
     stats->droppedFrames = ReadU64(payload + 8);
     stats->queueDepth = ReadU32(payload + 16);
     stats->bufferFrames = ReadU32(payload + 20);
+    if (length == kEnhancedPlaybackStatsBytes) {
+        stats->queueFrames = ReadU32(payload + 24);
+        stats->bufferCapacityFrames = ReadU32(payload + 28);
+        stats->startThresholdFrames = ReadU32(payload + 32);
+        stats->underrunCount = ReadU32(payload + 36);
+        stats->routedDeviceType = ReadU32(payload + 40);
+        stats->focusState = ReadU32(payload + 44);
+        stats->mediaVolume = ReadU32(payload + 48);
+        stats->mediaVolumeMax = ReadU32(payload + 52);
+        stats->queueHighWaterFrames = ReadU32(payload + 56);
+    }
     return true;
 }
 
@@ -96,6 +123,10 @@ inline bool IsPayloadLengthAllowed(uint16_t type, size_t payloadLength) {
     const size_t maximum =
         type == kTypePcm ? kMaxPcmPayload : kMaxControlPayload;
     return payloadLength <= maximum && payloadLength <= UINT32_MAX;
+}
+
+inline bool IsStrictlyIncreasingSequence(uint32_t previous, uint32_t next) {
+    return next > previous;
 }
 
 inline std::array<uint8_t, kFrameHeaderBytes> EncodeHeader(

@@ -7,7 +7,7 @@ import 'package:crypto/crypto.dart';
 import '../models/device_model.dart';
 
 const _companionLaunchAction = 'com.audioshare.usbcompanion.LAUNCH_SESSION';
-const minimumCompanionVersionCode = 2;
+const minimumCompanionVersionCode = 3;
 
 int? parseCompanionVersionCode(String packageDump) {
   final match = RegExp(

@@ -81,6 +81,19 @@ abstract interface class AudioCaptureController {
   int get androidDroppedFrames;
   int get androidQueueDepth;
   int get androidBufferFrames;
+  int get androidQueueFrames;
+  int get androidBufferCapacityFrames;
+  int get androidStartThresholdFrames;
+  int get androidUnderrunCount;
+  int get androidRoutedDeviceType;
+  int get androidFocusState;
+  int get androidMediaVolume;
+  int get androidMediaVolumeMax;
+  int get androidQueueHighWaterFrames;
+  int get hostQueueFrames;
+  int get hostQueueHighWaterFrames;
+  int get transportBytesSent;
+  int get heartbeatRttMilliseconds;
   WindowsCaptureMode get captureMode;
   int get globalLoopbackHresult;
   int get activeEndpointCount;
@@ -88,6 +101,8 @@ abstract interface class AudioCaptureController {
   int get endpointUnderrunFrames;
   int get endpointDiscontinuities;
   int get endpointRebuildCount;
+  int get endpointCatchUpFrames;
+  int get endpointQueueHighWaterFrames;
 
   bool initialize();
 
@@ -136,6 +151,19 @@ class AudioCaptureService implements AudioCaptureController {
   AudioCaptureGetDroppedChunksDart? _getAndroidDroppedFrames;
   AudioCaptureGetUint32Dart? _getAndroidQueueDepth;
   AudioCaptureGetUint32Dart? _getAndroidBufferFrames;
+  AudioCaptureGetUint32Dart? _getAndroidQueueFrames;
+  AudioCaptureGetUint32Dart? _getAndroidBufferCapacityFrames;
+  AudioCaptureGetUint32Dart? _getAndroidStartThresholdFrames;
+  AudioCaptureGetUint32Dart? _getAndroidUnderrunCount;
+  AudioCaptureGetUint32Dart? _getAndroidRoutedDeviceType;
+  AudioCaptureGetUint32Dart? _getAndroidFocusState;
+  AudioCaptureGetUint32Dart? _getAndroidMediaVolume;
+  AudioCaptureGetUint32Dart? _getAndroidMediaVolumeMax;
+  AudioCaptureGetUint32Dart? _getAndroidQueueHighWaterFrames;
+  AudioCaptureGetUint32Dart? _getHostQueueFrames;
+  AudioCaptureGetUint32Dart? _getHostQueueHighWaterFrames;
+  AudioCaptureGetDroppedChunksDart? _getTransportBytesSent;
+  AudioCaptureGetUint32Dart? _getHeartbeatRttMilliseconds;
   AudioCaptureGetUint32Dart? _getCaptureMode;
   AudioCaptureGetInt32Dart? _getGlobalLoopbackHresult;
   AudioCaptureGetUint32Dart? _getActiveEndpointCount;
@@ -143,6 +171,8 @@ class AudioCaptureService implements AudioCaptureController {
   AudioCaptureGetDroppedChunksDart? _getEndpointUnderrunFrames;
   AudioCaptureGetDroppedChunksDart? _getEndpointDiscontinuities;
   AudioCaptureGetUint32Dart? _getEndpointRebuildCount;
+  AudioCaptureGetDroppedChunksDart? _getEndpointCatchUpFrames;
+  AudioCaptureGetUint32Dart? _getEndpointQueueHighWaterFrames;
 
   bool _initialized = false;
   String? _libraryLoadError;
@@ -222,6 +252,45 @@ class AudioCaptureService implements AudioCaptureController {
             AudioCaptureGetUint32Native,
             AudioCaptureGetUint32Dart
           >('AudioCapture_GetAndroidBufferFrames');
+      _getAndroidQueueFrames = _lookupUint32(
+        'AudioCapture_GetAndroidQueueFrames',
+      );
+      _getAndroidBufferCapacityFrames = _lookupUint32(
+        'AudioCapture_GetAndroidBufferCapacityFrames',
+      );
+      _getAndroidStartThresholdFrames = _lookupUint32(
+        'AudioCapture_GetAndroidStartThresholdFrames',
+      );
+      _getAndroidUnderrunCount = _lookupUint32(
+        'AudioCapture_GetAndroidUnderrunCount',
+      );
+      _getAndroidRoutedDeviceType = _lookupUint32(
+        'AudioCapture_GetAndroidRoutedDeviceType',
+      );
+      _getAndroidFocusState = _lookupUint32(
+        'AudioCapture_GetAndroidFocusState',
+      );
+      _getAndroidMediaVolume = _lookupUint32(
+        'AudioCapture_GetAndroidMediaVolume',
+      );
+      _getAndroidMediaVolumeMax = _lookupUint32(
+        'AudioCapture_GetAndroidMediaVolumeMax',
+      );
+      _getAndroidQueueHighWaterFrames = _lookupUint32(
+        'AudioCapture_GetAndroidQueueHighWaterFrames',
+      );
+      _getHostQueueFrames = _lookupUint32('AudioCapture_GetHostQueueFrames');
+      _getHostQueueHighWaterFrames = _lookupUint32(
+        'AudioCapture_GetHostQueueHighWaterFrames',
+      );
+      _getTransportBytesSent = _lib!
+          .lookupFunction<
+            AudioCaptureGetDroppedChunksNative,
+            AudioCaptureGetDroppedChunksDart
+          >('AudioCapture_GetTransportBytesSent');
+      _getHeartbeatRttMilliseconds = _lookupUint32(
+        'AudioCapture_GetHeartbeatRttMilliseconds',
+      );
       _getCaptureMode = _lib!
           .lookupFunction<
             AudioCaptureGetUint32Native,
@@ -256,10 +325,23 @@ class AudioCaptureService implements AudioCaptureController {
             AudioCaptureGetUint32Native,
             AudioCaptureGetUint32Dart
           >('AudioCapture_GetEndpointRebuildCount');
+      _getEndpointCatchUpFrames = _lib!
+          .lookupFunction<
+            AudioCaptureGetDroppedChunksNative,
+            AudioCaptureGetDroppedChunksDart
+          >('AudioCapture_GetEndpointCatchUpFrames');
+      _getEndpointQueueHighWaterFrames = _lookupUint32(
+        'AudioCapture_GetEndpointQueueHighWaterFrames',
+      );
     } catch (error) {
       _libraryLoadError = error.toString();
     }
   }
+
+  AudioCaptureGetUint32Dart _lookupUint32(String name) => _lib!
+      .lookupFunction<AudioCaptureGetUint32Native, AudioCaptureGetUint32Dart>(
+        name,
+      );
 
   /// Initialize Windows system-audio capture.
   @override
@@ -316,6 +398,35 @@ class AudioCaptureService implements AudioCaptureController {
   @override
   int get androidBufferFrames => _getAndroidBufferFrames?.call() ?? 0;
   @override
+  int get androidQueueFrames => _getAndroidQueueFrames?.call() ?? 0;
+  @override
+  int get androidBufferCapacityFrames =>
+      _getAndroidBufferCapacityFrames?.call() ?? 0;
+  @override
+  int get androidStartThresholdFrames =>
+      _getAndroidStartThresholdFrames?.call() ?? 0;
+  @override
+  int get androidUnderrunCount => _getAndroidUnderrunCount?.call() ?? 0;
+  @override
+  int get androidRoutedDeviceType => _getAndroidRoutedDeviceType?.call() ?? 0;
+  @override
+  int get androidFocusState => _getAndroidFocusState?.call() ?? 0;
+  @override
+  int get androidMediaVolume => _getAndroidMediaVolume?.call() ?? 0;
+  @override
+  int get androidMediaVolumeMax => _getAndroidMediaVolumeMax?.call() ?? 0;
+  @override
+  int get androidQueueHighWaterFrames =>
+      _getAndroidQueueHighWaterFrames?.call() ?? 0;
+  @override
+  int get hostQueueFrames => _getHostQueueFrames?.call() ?? 0;
+  @override
+  int get hostQueueHighWaterFrames => _getHostQueueHighWaterFrames?.call() ?? 0;
+  @override
+  int get transportBytesSent => _getTransportBytesSent?.call() ?? 0;
+  @override
+  int get heartbeatRttMilliseconds => _getHeartbeatRttMilliseconds?.call() ?? 0;
+  @override
   WindowsCaptureMode get captureMode =>
       WindowsCaptureMode.fromNative(_getCaptureMode?.call() ?? 0);
   @override
@@ -330,6 +441,11 @@ class AudioCaptureService implements AudioCaptureController {
   int get endpointDiscontinuities => _getEndpointDiscontinuities?.call() ?? 0;
   @override
   int get endpointRebuildCount => _getEndpointRebuildCount?.call() ?? 0;
+  @override
+  int get endpointCatchUpFrames => _getEndpointCatchUpFrames?.call() ?? 0;
+  @override
+  int get endpointQueueHighWaterFrames =>
+      _getEndpointQueueHighWaterFrames?.call() ?? 0;
 
   /// Start audio capture after the Android transport handshake completes.
   @override

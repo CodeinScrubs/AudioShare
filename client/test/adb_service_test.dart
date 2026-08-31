@@ -167,7 +167,7 @@ al:36
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=2 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=3 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_fixtureApkHash  /data/app/debug/base.apk\n')
         ..enqueue(stdout: '43210\n');
       final adb = AdbService(
@@ -220,7 +220,7 @@ al:36
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=2 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=3 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_wrongFixtureApkHash  /data/app/debug/base.apk\n');
       final adb = AdbService(
         runner: runner,
@@ -241,7 +241,7 @@ al:36
   test('outdated installed companion is offered as missing', () async {
     final runner = FakeAdbRunner()
       ..enqueue(stdout: 'package:/data/app/release/base.apk\n')
-      ..enqueue(stdout: '    versionCode=1 minSdk=26 targetSdk=36\n')
+      ..enqueue(stdout: '    versionCode=2 minSdk=26 targetSdk=36\n')
       ..enqueue(exitCode: 1);
     final adb = AdbService(runner: runner, adbPath: 'fake-adb');
 

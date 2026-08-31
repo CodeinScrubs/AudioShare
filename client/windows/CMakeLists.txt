@@ -73,6 +73,10 @@ add_executable(wire_protocol_test EXCLUDE_FROM_ALL
   "${CMAKE_CURRENT_SOURCE_DIR}/../native/wire_protocol_test.cpp")
 apply_standard_settings(wire_protocol_test)
 
+add_executable(audio_mixer_test EXCLUDE_FROM_ALL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../native/audio_mixer_test.cpp")
+apply_standard_settings(audio_mixer_test)
+
 add_executable(system_capture_integration_test EXCLUDE_FROM_ALL
   "${CMAKE_CURRENT_SOURCE_DIR}/../native/system_capture_integration_test.cpp")
 target_link_libraries(system_capture_integration_test PRIVATE ws2_32)
@@ -184,7 +188,7 @@ if(AUDIOSHARE_COMPANION_APK)
       -File "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/verify_companion_apk.ps1"
       -Apk "${AUDIOSHARE_COMPANION_APK}"
       -ExpectedPackage "com.audioshare.usbcompanion"
-      -MinimumVersionCode 2
+      -MinimumVersionCode 3
       -ExpectedCertificateSha256 "${AUDIOSHARE_COMPANION_CERT_SHA256}"
     RESULT_VARIABLE COMPANION_VERIFY_RESULT
     OUTPUT_VARIABLE COMPANION_VERIFY_OUTPUT

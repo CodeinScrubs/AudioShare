@@ -157,6 +157,32 @@ class FakeAudioCaptureController implements AudioCaptureController {
   @override
   int get androidBufferFrames => 0;
   @override
+  int get androidQueueFrames => 0;
+  @override
+  int get androidBufferCapacityFrames => 0;
+  @override
+  int get androidStartThresholdFrames => 0;
+  @override
+  int get androidUnderrunCount => 0;
+  @override
+  int get androidRoutedDeviceType => 0;
+  @override
+  int get androidFocusState => 0;
+  @override
+  int get androidMediaVolume => 0;
+  @override
+  int get androidMediaVolumeMax => 0;
+  @override
+  int get androidQueueHighWaterFrames => 0;
+  @override
+  int get hostQueueFrames => 0;
+  @override
+  int get hostQueueHighWaterFrames => 0;
+  @override
+  int get transportBytesSent => 0;
+  @override
+  int get heartbeatRttMilliseconds => 0;
+  @override
   WindowsCaptureMode get captureMode => _mode;
   @override
   int get globalLoopbackHresult => 0;
@@ -171,6 +197,10 @@ class FakeAudioCaptureController implements AudioCaptureController {
   int get endpointDiscontinuities => 0;
   @override
   int get endpointRebuildCount => 0;
+  @override
+  int get endpointCatchUpFrames => 0;
+  @override
+  int get endpointQueueHighWaterFrames => 0;
 
   @override
   bool initialize() {

@@ -117,10 +117,11 @@ initial POC uses:
 - `LocalServerSocket` in Android's abstract namespace;
 - a randomized session token verified with constant-time comparison;
 - a bounded parser and duration-based live-edge queue that retains only the
-  newest 80 ms (or one indivisible PCM chunk), with a separate 32-chunk hard
+  newest 40 ms (or one indivisible PCM chunk), with a separate 32-chunk hard
   memory limit;
-- `AudioTrack` streaming PCM with low-latency mode, required built-in-speaker
-  selection, and periodic verification of the actual route;
+- `AudioTrack` streaming PCM with low-latency mode, a 40 ms target buffer and
+  20 ms API-31+ start threshold, required built-in-speaker selection,
+  media-audio focus handling, and periodic verification of the actual route;
 - a session-scoped partial wake lock for screen-off playback; and
 - a watchdog that closes a receiver when the host never connects.
 
@@ -153,7 +154,8 @@ The host retains the reliability design from `LOCKED_DOWN_WINDOWS_DESIGN.md`:
 
 The global path excludes the host's own process tree and is not tied to a
 physical endpoint. The active mode, endpoint count, queue drops, mixer underruns,
-discontinuities, and rebuild count are exposed through FFI diagnostics. On
+discontinuities, rebuild count, host queue high-water, Android buffer/focus/
+route counters, and heartbeat RTT are exposed through FFI diagnostics. On
 older/incompatible Windows, the compatibility mixer opens every usable active
 render endpoint and rebuilds on `IMMNotificationClient` events; only when no
 endpoint can be opened does it follow the default console render endpoint.

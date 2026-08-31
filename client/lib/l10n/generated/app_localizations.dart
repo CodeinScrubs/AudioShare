@@ -110,6 +110,12 @@ abstract class AppLocalizations {
   /// **'OK'**
   String get ok;
 
+  /// No description provided for @streamingDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Streaming diagnostics'**
+  String get streamingDiagnostics;
+
   /// No description provided for @noDevices.
   ///
   /// In en, this message translates to:

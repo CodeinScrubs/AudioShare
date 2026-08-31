@@ -15,6 +15,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ok => '确定';
 
   @override
+  String get streamingDiagnostics => '传输诊断';
+
+  @override
   String get noDevices => '未找到设备';
 
   @override

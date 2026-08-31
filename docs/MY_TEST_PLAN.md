@@ -29,13 +29,18 @@ pass/fail evidence. A test is not passed merely because the app launches.
    forced, record its explicit single-endpoint limitation.
 10. Turn Windows Wi-Fi off and repeat. No Internet should be required.
 11. Turn the phone screen off for 10 minutes. Confirm playback and the foreground
-   service remain active.
-12. Unplug USB during playback. Confirm bounded failure and exact mapping cleanup.
-13. Reconnect the remembered phone. Confirm automatic recovery without opening
+    service remain active.
+12. Start another media app and deliberately exercise audio-focus ducking and
+    transient loss. Confirm the diagnostics dialog reports the focus state,
+    queued-frame drop count increases only for discarded stale audio, and
+    playback resumes from the live edge after focus returns. Confirm permanent
+    focus loss is surfaced as a bounded playback error.
+13. Unplug USB during playback. Confirm bounded failure and exact mapping cleanup.
+14. Reconnect the remembered phone. Confirm automatic recovery without opening
     either UI or pressing Connect.
-14. Repeat connect/disconnect 25 times and compare host handles, threads, sockets,
+15. Repeat connect/disconnect 25 times and compare host handles, threads, sockets,
     memory, Android threads/heap, and `adb forward --list` for monotonic leaks.
-15. Run a two-hour stream. Record underruns, host/phone dropped-frame counters,
+16. Run a two-hour stream. Record underruns, host/phone dropped-frame counters,
     latency at start/end, drift, CPU, and memory.
 
 ## Part 2: Restricted target PC

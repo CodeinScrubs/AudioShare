@@ -23,6 +23,9 @@ int main() {
     invalidVersion[5] = 2;
     assert(!DecodeHeader(invalidVersion.data(), invalidVersion.size(), &decoded));
     assert(!DecodeHeader(encoded.data(), encoded.size() - 1, &decoded));
+    assert(IsStrictlyIncreasingSequence(7, 8));
+    assert(!IsStrictlyIncreasingSequence(7, 7));
+    assert(!IsStrictlyIncreasingSequence(7, 6));
 
     const auto oversizedPcm = EncodeHeader(
         kTypePcm, static_cast<uint32_t>(kMaxPcmPayload + 1), 1);
@@ -65,7 +68,7 @@ int main() {
     assert(ready.bitsPerSample == 16 && ready.bufferFrames == 2880);
     assert(!DecodeReady(readyBytes.data(), readyBytes.size() - 1, &ready));
 
-    std::array<uint8_t, 24> statsBytes{};
+    std::array<uint8_t, kLegacyPlaybackStatsBytes> statsBytes{};
     WriteU32(statsBytes.data(), 1);
     WriteU32(statsBytes.data() + 4, 2);
     WriteU32(statsBytes.data() + 8, 3);
@@ -77,8 +80,28 @@ int main() {
     assert(stats.receivedFrames == 0x0000000100000002ULL);
     assert(stats.droppedFrames == 0x0000000300000004ULL);
     assert(stats.queueDepth == 5 && stats.bufferFrames == 6);
+    assert(stats.queueFrames == 0 && stats.startThresholdFrames == 0);
     assert(!DecodePlaybackStats(
         statsBytes.data(), statsBytes.size() - 1, &stats));
+
+    std::array<uint8_t, kEnhancedPlaybackStatsBytes> enhancedStatsBytes{};
+    for (size_t index = 0; index < enhancedStatsBytes.size() / 4; ++index) {
+        WriteU32(
+            enhancedStatsBytes.data() + index * 4,
+            static_cast<uint32_t>(index + 1));
+    }
+    assert(DecodePlaybackStats(
+        enhancedStatsBytes.data(), enhancedStatsBytes.size(), &stats));
+    assert(stats.receivedFrames == 0x0000000100000002ULL);
+    assert(stats.droppedFrames == 0x0000000300000004ULL);
+    assert(stats.queueDepth == 5 && stats.bufferFrames == 6);
+    assert(stats.queueFrames == 7 && stats.bufferCapacityFrames == 8);
+    assert(stats.startThresholdFrames == 9 && stats.underrunCount == 10);
+    assert(stats.routedDeviceType == 11 && stats.focusState == 12);
+    assert(stats.mediaVolume == 13 && stats.mediaVolumeMax == 14);
+    assert(stats.queueHighWaterFrames == 15);
+    assert(!DecodePlaybackStats(
+        enhancedStatsBytes.data(), enhancedStatsBytes.size() - 1, &stats));
 
     std::cout << "Wire protocol tests passed\n";
     return 0;

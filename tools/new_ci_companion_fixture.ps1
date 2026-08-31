@@ -71,9 +71,13 @@ $keystore = Join-Path $directory 'ci-only-keystore.jks'
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.audioshare.usbcompanion"
-    android:versionCode="2"
+    android:versionCode="3"
     android:versionName="ci-only">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application android:hasCode="false" android:label="AudioShare CI-only fixture" />
 </manifest>
 '@,

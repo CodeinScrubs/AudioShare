@@ -20,7 +20,7 @@ Every frame starts with 16 bytes:
 | 4 | 2 | Version | `1` |
 | 6 | 2 | Type | Enumerated below |
 | 8 | 4 | Payload length | 0–65,536 control; 0–8,192 PCM |
-| 12 | 4 | Sequence | Must not move backwards within a connection |
+| 12 | 4 | Sequence | Normal frames must strictly increase within a connection; terminal `ERROR` may use reserved sequence `0` |
 
 Types:
 
@@ -66,7 +66,7 @@ header. Payloads must be nonempty, no larger than 8,192 bytes, and aligned to
 `channels * 2` bytes. Production tuning will normally use 5–20 ms chunks.
 
 The receiver queue applies a duration-based live-edge policy: it retains the
-newest 80 ms of complete PCM chunks (or one indivisible input chunk), with a
+newest 40 ms of complete PCM chunks (or one indivisible input chunk), with a
 separate hard cap of 32 chunks. When the duration or chunk cap is reached, it
 drops complete oldest chunks, increments dropped-frame statistics, and never
 grows without limit. This deliberately bounds post-stall latency instead of
@@ -76,7 +76,8 @@ the same real-time rate.
 ## Heartbeat and playback statistics
 
 The host sends an empty STATS request every three seconds after READY. Android
-returns a 24-byte big-endian payload:
+returns the enhanced 60-byte big-endian payload below. A 24-byte legacy payload
+is still accepted by the Windows host for compatibility:
 
 | Offset | Size | Field |
 |---:|---:|---|
@@ -84,18 +85,30 @@ returns a 24-byte big-endian payload:
 | 8 | 8 | Total PCM frames dropped by the bounded playback queue |
 | 16 | 4 | Current queued chunk count |
 | 20 | 4 | Configured AudioTrack buffer frames |
+| 24 | 4 | Current queued PCM frames |
+| 28 | 4 | AudioTrack buffer capacity frames |
+| 32 | 4 | AudioTrack start-threshold frames (API 31+, otherwise configured buffer) |
+| 36 | 4 | AudioTrack underrun count |
+| 40 | 4 | Routed output device type (`TYPE_BUILTIN_SPEAKER` is expected) |
+| 44 | 4 | Audio-focus state (`0` none, `1` gained, `2` ducked, `3` transient loss, `4` permanent loss) |
+| 48 | 4 | Current music-stream volume |
+| 52 | 4 | Maximum music-stream volume |
+| 56 | 4 | Queue high-water mark in frames |
 
 This response also acts as the active heartbeat. The Windows native layer
-validates the exact length before decoding and exposes these counters through
-the FFI diagnostics API. PING/PONG remains supported for protocol tests and
-future peers.
+validates the exact 24- or 60-byte length before decoding and exposes these
+counters through the FFI diagnostics API. PING/PONG remains supported for
+protocol tests and future peers.
 
 ## Current gaps
 
 ERROR payloads are bounded UTF-8 diagnostic text. Capability negotiation,
-monotonic sequence rollover, timestamp semantics, and focus/flush messages
-remain future-version work. The Windows host requires companion application
-version code 2 or newer, requires the installed base APK SHA-256 to exactly
+sequence rollover, and timestamp semantics remain future-version work;
+normal sequence numbers are strictly increasing for the lifetime of one
+connection; a terminal `ERROR` may use reserved sequence `0`.
+Focus, route, and queue state are reported in enhanced STATS rather than as
+separate control messages. The Windows host requires companion application
+version code 3 or newer, requires the installed base APK SHA-256 to exactly
 match the APK bundled with that host build, and validates READY fields before
 starting capture. A fatal handshake ERROR is reported to the Dart supervisor
 immediately rather than waiting for the connection deadline.
