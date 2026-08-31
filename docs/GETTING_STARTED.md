@@ -12,8 +12,8 @@ and explain each phone and Windows step in beginner language.
 ## Download one file
 
 Download the single file named
-`AudioShare-USB-Windows-v3.0.0-rc.3.zip` from the
-[GitHub Releases page](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.3).
+`AudioShare-USB-Windows-v3.0.0-rc.4.zip` from the
+[GitHub Releases page](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.4).
 The ZIP already contains the Windows program, ADB, and the matching Android
 companion APK. You do not need Android Studio to use it.
 
@@ -54,6 +54,10 @@ visible.
 2. Start `audioshare.exe`.
 3. Play sound in any ordinary Windows application. This includes browsers,
    media players, Windows system sounds, and Infinit/idplayer.
+
+Do not play a separate music or video stream directly on the phone while it is
+acting as the PC speaker. If that happens, AudioShare stops rather than fighting
+the phone app: stop the phone-local media, then click **Connect** again.
 
 To stop, click **Disconnect** in AudioShare or use the notification's
 **Disconnect** action on the phone. Disconnect stops the current cable session

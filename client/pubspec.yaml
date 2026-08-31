@@ -2,7 +2,7 @@ name: audioshare
 description: Stream Windows system audio to Android over USB ADB.
 publish_to: none
 
-version: 3.0.0-rc.3+3
+version: 3.0.0-rc.4+4
 
 environment:
   sdk: ^3.11.0

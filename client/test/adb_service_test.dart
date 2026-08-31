@@ -217,7 +217,7 @@ not a key: ignored
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=6 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=7 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_fixtureApkHash  /data/app/debug/base.apk\n')
         ..enqueue(stdout: '43210\n');
       final adb = AdbService(
@@ -286,7 +286,7 @@ not a key: ignored
       final runner = FakeAdbRunner()
         ..enqueue(exitCode: 1)
         ..enqueue(stdout: 'package:/data/app/debug/base.apk\n')
-        ..enqueue(stdout: '    versionCode=6 minSdk=26 targetSdk=36\n')
+        ..enqueue(stdout: '    versionCode=7 minSdk=26 targetSdk=36\n')
         ..enqueue(stdout: '$_wrongFixtureApkHash  /data/app/debug/base.apk\n');
       final adb = AdbService(
         runner: runner,
@@ -324,7 +324,7 @@ not a key: ignored
     () async {
       final runner = FakeAdbRunner()
         ..enqueue(stdout: 'package:/data/app/release/base.apk\n')
-        ..enqueue(stdout: '    versionCode=7 minSdk=26 targetSdk=36\n');
+        ..enqueue(stdout: '    versionCode=8 minSdk=26 targetSdk=36\n');
       final adb = AdbService(runner: runner, adbPath: 'fake-adb');
 
       await expectLater(

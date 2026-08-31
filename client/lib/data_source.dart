@@ -29,6 +29,7 @@ enum UiErrorType {
   transportHandshakeFailed,
   captureInitializationFailed,
   captureStopped,
+  phoneAudioInUse,
   captureStartFailed,
   connectAndroidDeviceFailed,
   connectDeviceFailed,
@@ -74,6 +75,24 @@ class UiError {
   final Object? exception;
 }
 
+String _failureDetails(UiError error) => [
+  error.nativeError?.message ?? '',
+  error.exception?.toString() ?? '',
+].join(' ').toLowerCase();
+
+UiError _specializeFailure(UiError error) {
+  if (error.type == UiErrorType.phoneAudioInUse ||
+      !_failureDetails(error).contains('audio focus')) {
+    return error;
+  }
+  return UiError(
+    type: UiErrorType.phoneAudioInUse,
+    phase: error.phase,
+    nativeError: error.nativeError,
+    exception: error.exception,
+  );
+}
+
 enum FailureDisposition { transient, needsUserAction, environmental, fatal }
 
 /// Decides whether repeating the exact same operation can reasonably repair a
@@ -90,13 +109,12 @@ FailureDisposition classifyFailure(UiError error) {
     case UiErrorType.companionInstallFailed:
     case UiErrorType.captureInitializationFailed:
       return FailureDisposition.fatal;
+    case UiErrorType.phoneAudioInUse:
+      return FailureDisposition.needsUserAction;
     default:
       break;
   }
-  final details = [
-    error.nativeError?.message ?? '',
-    error.exception?.toString() ?? '',
-  ].join(' ').toLowerCase();
+  final details = _failureDetails(error);
   if (details.contains('authentication') ||
       details.contains('protocol version') ||
       details.contains('unsupported protocol') ||
@@ -962,21 +980,22 @@ class DataSource extends ChangeNotifier {
     bool retryAutomatically = false,
   }) async {
     if (_disposed || generation != _sessionGeneration) return;
+    final effectiveError = _specializeFailure(error);
     final deviceId = _activeSessionDeviceId ?? _phaseMap.keys.firstOrNull;
     final requestedRetry =
         retryAutomatically &&
-        classifyFailure(error) == FailureDisposition.transient &&
+        classifyFailure(effectiveError) == FailureDisposition.transient &&
         _lastCheck &&
         deviceId != null;
     final circuitTripped =
-        requestedRetry && _recordRetryFailure(deviceId, error);
+        requestedRetry && _recordRetryFailure(deviceId, effectiveError);
     final willRetry = requestedRetry && !circuitTripped;
     _sessionGeneration++;
     _connectingDeviceId = null;
     // Keep the failure in diagnostics, but do not leave a modal dialog over a
     // session that the supervisor is already repairing. Terminal failures
     // still notify the user immediately.
-    _queueError(error, notifyUser: !willRetry);
+    _queueError(effectiveError, notifyUser: !willRetry);
     if (circuitTripped) _reconnectAttempt = 0;
     if (willRetry) _lastAutoDeviceId = '';
     await _cleanupSession(

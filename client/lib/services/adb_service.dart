@@ -10,7 +10,7 @@ const _companionLaunchAction = 'com.audioshare.usbcompanion.LAUNCH_SESSION';
 // Keep this synchronized with the companion artifact accepted by the
 // release workflow. A newer phone-side companion must never be silently
 // downgraded by an older portable host.
-const bundledCompanionVersionCode = 6;
+const bundledCompanionVersionCode = 7;
 const minimumCompanionVersionCode = bundledCompanionVersionCode;
 const _forwardJournalOwner = 'CodeinScrubs.AudioShare';
 const _forwardJournalVersion = 1;

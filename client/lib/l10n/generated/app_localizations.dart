@@ -410,6 +410,12 @@ abstract class AppLocalizations {
   /// **'System audio capture stopped.'**
   String get captureStopped;
 
+  /// No description provided for @phoneAudioInUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone media interrupted AudioShare. Stop music or video playing on the phone, then click Connect again.'**
+  String get phoneAudioInUse;
+
   /// No description provided for @captureStartFailed.
   ///
   /// In en, this message translates to:

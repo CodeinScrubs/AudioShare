@@ -171,6 +171,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get captureStopped => '系统音频捕获已停止。';
 
   @override
+  String get phoneAudioInUse =>
+      '手机上的媒体播放中断了 AudioShare。请停止手机上的音乐或视频，然后再次点击“连接”。';
+
+  @override
   String get captureStartFailed => '无法开始捕获系统音频。';
 
   @override

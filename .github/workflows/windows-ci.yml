@@ -83,6 +83,10 @@ jobs:
           & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" `
             "platforms;android-36" "build-tools;36.1.0"
 
+      - name: Validate companion version pins
+        working-directory: .
+        run: .\tools\verify_release_version_consistency.ps1
+
       - name: Verify checked-in Debug companion identity
         working-directory: .
         run: |
@@ -93,7 +97,7 @@ jobs:
           if ($package -cne 'com.audioshare.usbcompanion.debug') {
             throw "Wrong Debug companion package: '$package'."
           }
-          if ([int] $version -ne 6) {
+          if ([int] $version -ne 7) {
             throw "Wrong Debug companion version code: '$version'."
           }
 
@@ -111,7 +115,7 @@ jobs:
             .\tools\verify_companion_apk.ps1 `
               -Apk $env:AUDIOSHARE_COMPANION_APK `
               -ExpectedPackage 'com.audioshare.usbcompanion' `
-              -ExpectedVersionCode 6 `
+              -ExpectedVersionCode 7 `
               -ExpectedCertificateSha256 ('0' * 64)
             $accepted = $true
           } catch {
@@ -128,13 +132,13 @@ jobs:
           .\tools\new_ci_companion_fixture.ps1 `
             -OutputDirectory $directory `
             -GithubEnvironmentFile '' `
-            -VersionCode 7
+            -VersionCode 8
           $accepted = $false
           try {
             .\tools\verify_companion_apk.ps1 `
               -Apk (Join-Path $directory 'companion-ci-signed.apk') `
               -ExpectedPackage 'com.audioshare.usbcompanion' `
-              -ExpectedVersionCode 6 `
+              -ExpectedVersionCode 7 `
               -ExpectedCertificateSha256 ('0' * 64)
             $accepted = $true
           } catch {

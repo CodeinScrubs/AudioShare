@@ -10,7 +10,7 @@ For non-developers, start with the [beginner guide](docs/GETTING_STARTED.md).
 The release page publishes one standalone Windows ZIP containing the EXE,
 bundled ADB, and matching companion APK:
 
-[Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.3)
+[Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.4)
 
 ### Ask an AI assistant to guide you
 
@@ -39,10 +39,12 @@ exact cleanup. Headless virtual audio can underrun, so the current Android
 hardening pass treats zero-drop timing as a physical-device gate. The Windows
 capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
-non-zero PCM. Flutter analysis and 38 supervisor/lifecycle/security/persistence
-tests pass. RC3 also reports Windows capture signal level and Android playback
-progress, journals exact AudioShare-owned ADB forwards for crash recovery, and
-shows a visible warning when the phone media volume is muted or very low.
+non-zero PCM. Flutter analysis and 39 supervisor/lifecycle/security/persistence
+tests pass. RC4 also reports Windows capture signal level and Android playback
+progress, journals exact AudioShare-owned ADB forwards for crash recovery,
+shows a visible warning when the phone media volume is muted or very low, and
+stops with a clear instruction instead of reconnecting if phone-local media
+takes Android audio focus.
 The complete audible path is now hardware tested on a Samsung Galaxy A52s with
 Android 14: global-system capture, a 10 ms host queue high-water mark, and zero
 visible host/Android drops in the initial run. Screen-off endurance, repeated
@@ -108,6 +110,11 @@ driver can require administrator access and is outside AudioShare's control.
 2. Plug in the remembered, authorized phone by USB.
 3. Play sound from any Windows application, including Infinit/idplayer.
 
+While AudioShare is using the phone as the PC speaker, do not start a separate
+music or video stream directly on the phone. Android gives that local app audio
+focus, so AudioShare stops once and asks you to stop the phone-local media and
+click **Connect** again. It does not enter an automatic reconnect loop.
+
 Once the Windows host is open, the intended workflow requires no Android UI, IP
 address, Wi-Fi, Internet, firewall approval, or Connect click. Automatic Windows
 startup and tray UI are not implemented yet. The zero-click USB supervisor is
@@ -134,7 +141,7 @@ flutter test
 flutter build windows --debug
 ```
 
-Debug builds bundle the clearly labeled version-code 6 debug companion APK. A
+Debug builds bundle the clearly labeled version-code 7 debug companion APK. A
 distributable release must use a stable signing key and provide both the signed
 APK and its pinned signer-certificate SHA-256 explicitly. Configuration fails
 unless Android SDK `apkanalyzer` and `apksigner` confirm the signature, exact

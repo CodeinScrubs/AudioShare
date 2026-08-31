@@ -186,6 +186,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get captureStopped => 'System audio capture stopped.';
 
   @override
+  String get phoneAudioInUse =>
+      'Phone media interrupted AudioShare. Stop music or video playing on the phone, then click Connect again.';
+
+  @override
   String get captureStartFailed => 'System audio capture could not be started.';
 
   @override

@@ -145,6 +145,7 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
       UiErrorType.captureInitializationFailed =>
         l10n.captureInitializationFailed,
       UiErrorType.captureStopped => l10n.captureStopped,
+      UiErrorType.phoneAudioInUse => l10n.phoneAudioInUse,
       UiErrorType.captureStartFailed => l10n.captureStartFailed,
       UiErrorType.connectAndroidDeviceFailed => l10n.connectAndroidDeviceFailed,
       UiErrorType.connectDeviceFailed => l10n.connectDeviceFailed,

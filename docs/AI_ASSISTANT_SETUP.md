@@ -60,6 +60,11 @@ Use these steps in order:
     system sound. The phone can stay in the foreground or background while its
     playback notification remains active.
 
+Do not ask the user to play a separate music/video stream directly on the phone
+while it is acting as the PC speaker. If they do, Android transfers media audio
+focus: AudioShare stops once, the user stops that phone-local media, and then
+clicks **Connect** again. Repeated reconnecting is not the expected behavior.
+
 ## Expected result and limits
 
 The phone should play ordinary audio from browsers, media players, games that

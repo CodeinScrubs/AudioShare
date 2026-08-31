@@ -69,6 +69,7 @@
   "transportHandshakeFailed": "The authenticated USB audio handshake failed.",
   "captureInitializationFailed": "System audio capture could not be initialized.",
   "captureStopped": "System audio capture stopped.",
+  "phoneAudioInUse": "Phone media interrupted AudioShare. Stop music or video playing on the phone, then click Connect again.",
   "captureStartFailed": "System audio capture could not be started.",
   "connectAndroidDeviceFailed": "An error occurred while connecting to the Android device.",
   "connectDeviceFailed": "An error occurred while connecting to the device.",

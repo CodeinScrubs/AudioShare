@@ -344,7 +344,8 @@ void main() {
         classifyFailure(
           const UiError(
             type: UiErrorType.captureStopped,
-            exception: 'Android audio focus was lost',
+            exception:
+                'AudioTrack playback failed: Android audio focus was lost',
           ),
         ),
         FailureDisposition.needsUserAction,
@@ -402,6 +403,7 @@ void main() {
   DataSource createSource({
     Duration captureStartupTimeout = const Duration(milliseconds: 100),
     Duration reconnectDelay = const Duration(milliseconds: 2),
+    bool enableBackgroundTimers = false,
   }) {
     return source = DataSource(
       adb: adb,
@@ -410,7 +412,7 @@ void main() {
       captureStartupTimeout: captureStartupTimeout,
       reconnectBaseDelay: reconnectDelay,
       reconnectMaxDelay: reconnectDelay,
-      enableBackgroundTimers: false,
+      enableBackgroundTimers: enableBackgroundTimers,
     );
   }
 
@@ -614,6 +616,34 @@ void main() {
       );
       expect(dataSource.getConnectState('USB123'), 0);
       expect(dataSource.takePendingError(), isNotNull);
+    },
+  );
+
+  test(
+    'phone media taking audio focus stops once with an actionable error',
+    () async {
+      adb.snapshot = [usbPhone()];
+      final dataSource = createSource(
+        reconnectDelay: const Duration(milliseconds: 1),
+        enableBackgroundTimers: true,
+      );
+      await waitUntil(
+        () => dataSource.overallPhase == ConnectionPhase.streaming,
+      );
+
+      audio.nextError = const AudioCaptureError(
+        2107,
+        'Android playback error: AudioTrack playback failed: '
+        'Android audio focus was lost',
+      );
+      await waitUntil(() => dataSource.overallPhase == ConnectionPhase.failed);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(dataSource.lastError?.type, UiErrorType.phoneAudioInUse);
+      expect(dataSource.getConnectState('USB123'), 0);
+      expect(adb.launchCalls, 1);
+      expect(adb.createForwardCalls, 1);
+      expect(dataSource.takePendingError()?.type, UiErrorType.phoneAudioInUse);
     },
   );
 

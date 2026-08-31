@@ -21,6 +21,11 @@ and USB debugging; connect and unlock the phone with a data cable; authorize
 the PC; run audioshare.exe without admin; click Install companion if offered;
 then wait for auto-connect or click Connect and raise phone media volume.
 
+If music or video is started directly on the phone while it is acting as the PC
+speaker, Android transfers media audio focus. The correct RC4 behavior is one
+clear stop—not a reconnect loop. Tell the user to stop that phone-local media
+and click Connect again.
+
 Security and platform constraints: USB only; no INTERNET or microphone
 permission in the companion; no firewall weakening; no silent companion
 installation; normal operation should not need admin. A missing OEM USB/ADB

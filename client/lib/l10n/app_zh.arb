@@ -69,6 +69,7 @@
   "transportHandshakeFailed": "USB 音频身份验证握手失败。",
   "captureInitializationFailed": "无法初始化系统音频捕获。",
   "captureStopped": "系统音频捕获已停止。",
+  "phoneAudioInUse": "手机上的媒体播放中断了 AudioShare。请停止手机上的音乐或视频，然后再次点击“连接”。",
   "captureStartFailed": "无法开始捕获系统音频。",
   "connectAndroidDeviceFailed": "连接 Android 设备时发生错误。",
   "connectDeviceFailed": "连接设备时发生错误。",

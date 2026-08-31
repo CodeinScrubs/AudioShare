@@ -56,6 +56,9 @@ EDR, UAC, or organizational security controls.
   selects Bluetooth, wired, or USB audio instead, the stream fails with that
   route named rather than silently playing through the wrong device.
 - Keep the foreground playback notification/service allowed by device policy.
+- If music or video starts directly on the phone, Android gives that app media
+  audio focus. AudioShare deliberately stops once instead of reconnecting in a
+  loop. Stop the phone-local media, then click **Connect** again.
 - Open the companion once on Android 13+ to grant notification permission if
   you want its Disconnect action visible; USB playback itself does not wait on
   that dialog.
