@@ -456,10 +456,11 @@ certificate SHA-256=23bb6499dbb6aa3610d0a9ee0df9c922d9023e4b7990dc23ac6c1743f215
 
 The checked-in Windows Debug companion was regenerated from the same Android
 source and verified as package `com.audioshare.usbcompanion.debug`, version
-code 5. The final Windows Release bundle contains the exact signed RC2 APK,
-reports 31 files, and passes validation before and after extraction plus
-missing-file and altered-file rejection. ZIP metadata can vary between builders,
-so every published archive carries its own authoritative adjacent `.sha256` asset:
+code 5. The public GitHub Windows Release bundle contains the exact signed RC2
+APK, reports 30 payload files plus its integrity manifest, and passes validation
+after fresh download and extraction. Missing-file and altered-file rejection are
+also covered by the packaging gate. ZIP metadata can vary between builders, so
+every published archive carries its own authoritative adjacent `.sha256` asset:
 
 ```text
 AudioShare-USB-Windows-v3.0.0-rc.2.zip
