@@ -10,14 +10,13 @@ For non-developers, start with the [beginner guide](docs/GETTING_STARTED.md).
 The release page publishes one standalone Windows ZIP containing the EXE,
 bundled ADB, and matching companion APK:
 
-[Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.4)
+[Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.5)
 
 **Connected but silent on a work PC?** Start with the
 [silent-connection checks](docs/TROUBLESHOOTING.md#connected-but-the-phone-is-silent).
-The current source adds a timer-driven legacy capture fix and clearer signal
-diagnostics after RC4; these changes are not in the linked RC4 release. The
-reported work-PC failure is still awaiting target-PC verification. See the
-[investigation and test-build notes](docs/WORK_PC_INVESTIGATION.md).
+RC5 adds a timer-driven legacy capture fix and clearer signal diagnostics.
+The reported work-PC failure is still awaiting target-PC verification. See the
+[investigation notes](docs/WORK_PC_INVESTIGATION.md).
 
 ### Ask an AI assistant to guide you
 

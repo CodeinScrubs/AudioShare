@@ -62,6 +62,32 @@ prove every OEM's audio-focus policy, the complete Windows UI path, screen-off
 continuity, repeated USB recovery, latency percentiles, restricted-PC behavior,
 memory stability, or endurance.
 
+## 2026-09-05: RC5 preparation with the connected Galaxy A52s
+
+The installed non-debuggable companion exactly matched the signed Android RC4
+APK, SHA-256
+`1212b8bfad843e3ad04ee848476f407e98a11a6fa2d571af19b2cdcae519da7b`.
+No phone app update or driver/security change was performed.
+
+Two kinds of hardware evidence were collected; neither is a Flutter UI test:
+
+| Test | Observed result |
+| --- | --- |
+| Protocol harness, 15 seconds | 720,000 frames; zero drops and underruns; speaker route, focus, wake lock; service and owned forward cleaned up. |
+| Production Windows DLL -> ADB USB -> phone, three 30-second sessions | Real PC signal and Android playback-head progress in all sessions; zero host/Android drops; final Android underrun counts 0, 7, 7; each service/forward cleaned up. |
+| Forced default fallback, Debug DLL, concurrent full build | At approximately 20 seconds, 960 Android frames were dropped (20 ms); host dropped chunks remained zero. The strict harness failed as intended. |
+| Forced default fallback, optimized Release DLL, no concurrent build, 60 seconds | 2,879,040 host-captured frames; latest heartbeat reported 2,740,800 received/written frames, head 2,739,072; zero drops/underruns; service/forward cleaned up. |
+
+Android counters above come from periodic heartbeats and therefore lag the
+host's final capture snapshot. They are not a sample-exact recording or a
+measurement of acoustic latency. The fallback run reported one initial capture
+discontinuity. The two different fallback conditions are not a controlled proof
+that Debug optimization or build load alone caused the drop.
+
+The connected phone confirms native capture, USB delivery, and speaker-playback
+progress on the development PC. It does not resolve the silent work-PC incident,
+prove physical cable unplug/replug, or prove every desktop UI interaction.
+
 ## Stable-release promotion gates
 
 - Ten-minute continuous playback with the phone screen off and final diagnostics.

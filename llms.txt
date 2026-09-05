@@ -26,6 +26,14 @@ speaker, Android transfers media audio focus. The correct RC4 behavior is one
 clear stop—not a reconnect loop. Tell the user to stop that phone-local media
 and click Connect again.
 
+Windows RC5 bundles the unchanged Android RC4 companion (version code 7).
+If connected but silent, keep a PC video playing for 15 seconds, open the graph
+icon beside Disconnect, and use Copy report. Refresh for a second snapshot.
+Streaming/received frames do not prove audible sound: inspect signal age,
+Android playback progress, route and media volume. Physical PC speakers and
+Stereo Mix are not required if Windows has a usable playback endpoint.
+The reported speakerless work-PC failure remains unverified on that PC.
+
 Security and platform constraints: USB only; no INTERNET or microphone
 permission in the companion; no firewall weakening; no silent companion
 installation; normal operation should not need admin. A missing OEM USB/ADB

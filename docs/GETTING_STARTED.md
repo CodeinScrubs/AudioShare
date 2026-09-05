@@ -12,8 +12,8 @@ and explain each phone and Windows step in beginner language.
 ## Download one file
 
 Download the single file named
-`AudioShare-USB-Windows-v3.0.0-rc.4.zip` from the
-[GitHub Releases page](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.4).
+`AudioShare-USB-Windows-v3.0.0-rc.5.zip` from the
+[GitHub Releases page](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.5).
 The ZIP already contains the Windows program, ADB, and the matching Android
 companion APK. You do not need Android Studio to use it.
 

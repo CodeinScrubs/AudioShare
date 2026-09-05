@@ -8,9 +8,10 @@ output selected at volume 98. Lack of audible PC speakers is not evidence of
 a missing Windows render endpoint. The actual AudioShare diagnostic report
 and work-PC Windows build are still needed.
 
-The local test build is labelled `workpc-test-20260905`. It uses the unchanged,
-signed RC4 Android companion (version code 7). It is not a new stable release
-and has not been verified on the affected PC.
+The initial local test build was labelled `workpc-test-20260905`. Its fixes
+are included in Windows RC5, using the unchanged, signed RC4 Android companion
+(version code 7). RC5 is not a stable release and has not been verified on the
+affected work PC.
 
 ## Verified defect and fix
 
@@ -59,9 +60,9 @@ Hosted CI compiles this target; it does not claim hardware playback coverage.
 - No Android production code, authentication, ADB authorization, package
   signature validation, protocol, or automatic retry policy was changed.
 
-## Test this build on the affected PC
+## Test RC5 on the affected PC
 
-1. Close any older AudioShare window. Extract the complete test ZIP into a new
+1. Close any older AudioShare window. Extract the complete RC5 ZIP into a new
    folder, keeping all files together. Do not replace only the EXE or DLL.
 2. Run `audioshare.exe` normally, connect the phone, and approve USB debugging.
    Leave the matching RC4 companion installed if already present.

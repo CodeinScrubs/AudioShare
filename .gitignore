@@ -26,6 +26,10 @@ client/.flutter-plugins-dependencies
 /dist/
 /client/dist/
 
+# Python developer test tools
+__pycache__/
+*.pyc
+
 # macOS system
 .DS_Store
 
