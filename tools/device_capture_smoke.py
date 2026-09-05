@@ -164,6 +164,15 @@ def run(args: argparse.Namespace) -> None:
                     if "AudioShare:UsbPlayback" not in power:
                         raise RuntimeError("Playback wake lock is missing")
                     if args.screen_off and "mWakefulness=Awake" in power:
+                        # Capture only relevant power fields before restoring
+                        # the original screen state overwrites the wake cause.
+                        wake_fields = [line.strip() for line in power.splitlines()
+                                       if any(key in line for key in
+                                              ("mWakefulness=", "mLastWakeUpReason",
+                                               "mLastSleepReason", "mStayOn="))]
+                        print(json.dumps({"screen_off_failure": wake_fields,
+                                          "elapsed": round(time.monotonic() - started),
+                                          **values}), flush=True)
                         raise RuntimeError("Display woke during the screen-off test")
                     print(json.dumps({"cycle": cycle, "elapsed": round(time.monotonic() - started),
                                       "screen_off_sampled": args.screen_off, **values}), flush=True)

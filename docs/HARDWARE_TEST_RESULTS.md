@@ -90,6 +90,12 @@ prove physical cable unplug/replug, or prove every desktop UI interaction.
 
 ## Stable-release promotion gates
 
+A 30-second screen-off production-DLL-to-phone run on 2026-09-05 passed with
+zero drops/underruns and verified playback/wake-lock/cleanup. An earlier
+ten-minute attempt stopped at its first check because the display was awake;
+its wake cause was not established. The short run does not close the ten-minute
+gate below.
+
 - Ten-minute continuous playback with the phone screen off and final diagnostics.
 - Wi-Fi-disabled playback using multiple simultaneous Windows applications.
 - Automatic recovery after USB unplug/replug and repeated reconnect cycling.

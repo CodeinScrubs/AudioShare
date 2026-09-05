@@ -42,7 +42,7 @@ void main() {
         ),
       );
       expect(find.text('captured_frames=0'), findsOneWidget);
-    report = List.generate(70, (index) => 'metric_$index=48000').join('\n');
+      report = List.generate(70, (index) => 'metric_$index=48000').join('\n');
       await tester.tap(find.text('Copy report'));
       await tester.pump();
       expect(copiedText, 'captured_frames=0');
