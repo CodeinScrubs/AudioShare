@@ -88,15 +88,47 @@ The connected phone confirms native capture, USB delivery, and speaker-playback
 progress on the development PC. It does not resolve the silent work-PC incident,
 prove physical cable unplug/replug, or prove every desktop UI interaction.
 
+## 2026-09-05: RC5 screen-off and public-download verification
+
+A subsequent **600-second production-DLL -> USB -> phone test passed** on the
+same Galaxy A52s with the locally built optimized Windows RC5 host. All 59
+periodic samples reported screen-off power state, speaker route, gained audio
+focus, wake lock, and advancing playback. Final host capture was 28,801,920
+frames, with zero host/Android drops, zero Android underruns, zero capture
+discontinuities, and a host queue high-water mark of 1,440 frames (30 ms).
+The latest Android heartbeat reported 28,707,840 received/written frames and
+playback head 28,697,856. The service and owned ADB forward stopped cleanly.
+
+These are approximately ten-second power/playback samples, not continuous
+screen observation, acoustic verification, a Flutter UI run, or a latency
+measurement. The earlier attempt that woke the display remains a failed
+screen-off attempt; this later pass does not establish that wake's cause.
+
+The **actual public RC5 ZIP** was then downloaded anonymously, checked against
+both its SHA-256 sidecar and GitHub asset digest, and extracted under a path
+containing spaces. All 33 payload files passed the internal manifest verifier.
+The Windows version was `3.0.0-rc.5+5`; the companion was non-debuggable version
+code 7 with the expected signing certificate and exact installed APK hash.
+
+A separate **30-second test using that downloaded production DLL** passed:
+1,439,040 host-captured frames, zero drops/underruns/discontinuities, continuing
+Android playback, and clean service/forward teardown. The latest heartbeat
+reported 1,296,960 received/written frames and head 1,297,536. Host and Android
+counters are collected asynchronously, including between Android counters;
+their snapshot differences are not packet loss or acoustic latency.
+
+Public ZIP SHA-256:
+`a68846cac2dc76ca920fc4dd37aa1b13a256bf4071314fc3ebbf674b5a206995`.
+
+Raw [screen-off samples](evidence/2026-09-05-rc5-screen-off.json) and
+[public-download samples](evidence/2026-09-05-rc5-public-download.json) are retained
+for review. Windows tag/main CI, Android CI, and the release workflow passed.
+
 ## Stable-release promotion gates
 
-A 30-second screen-off production-DLL-to-phone run on 2026-09-05 passed with
-zero drops/underruns and verified playback/wake-lock/cleanup. An earlier
-ten-minute attempt stopped at its first check because the display was awake;
-its wake cause was not established. The short run does not close the ten-minute
-gate below.
-
-- Ten-minute continuous playback with the phone screen off and final diagnostics.
+- Ten-minute screen-off playback through the portable Windows UI with final
+  diagnostics (the native-DLL route passed above; UI/acoustic confirmation is
+  still separate).
 - Wi-Fi-disabled playback using multiple simultaneous Windows applications.
 - Automatic recovery after USB unplug/replug and repeated reconnect cycling.
 - At least 20 visible/audio transient measurements with median and p95 latency.
