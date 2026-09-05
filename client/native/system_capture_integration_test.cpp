@@ -230,6 +230,13 @@ int main(int argc, char** argv) {
     bool expectHandshakeStop = false;
     bool expectHandshakeError = false;
     unsigned int expectedMode = 0;
+#if defined(AUDIOSHARE_TEST_DEFAULT_TIMER)
+    // This hardware regression must never accept "running, but zero audio".
+    // A separate process must play a sound while the test runs.
+    requirePcm = true;
+    requireSignal = true;
+    expectedMode = 3;
+#endif
     for (int index = 1; index < argc; ++index) {
         if (std::strcmp(argv[index], "--require-pcm") == 0) {
             requirePcm = true;
@@ -290,7 +297,11 @@ int main(int argc, char** argv) {
     g_handshakeStalled = CreateEvent(nullptr, TRUE, FALSE, nullptr);
     HANDLE serverThread = CreateThread(
         nullptr, 0, FakeCompanionThread, nullptr, 0, nullptr);
+#if defined(AUDIOSHARE_TEST_DEFAULT_TIMER)
+    HMODULE library = LoadLibraryA("audio_capture_no_events.dll");
+#else
     HMODULE library = LoadLibraryA("audio_capture.dll");
+#endif
     if (serverThread == nullptr || g_transportReady == nullptr ||
         g_handshakeStalled == nullptr || library == nullptr) {
         std::fprintf(stderr, "Could not initialize native integration test\n");

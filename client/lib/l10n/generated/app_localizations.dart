@@ -116,6 +116,48 @@ abstract class AppLocalizations {
   /// **'Streaming diagnostics'**
   String get streamingDiagnostics;
 
+  /// No description provided for @copyDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy report'**
+  String get copyDiagnostics;
+
+  /// No description provided for @diagnosticsCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get diagnosticsCopied;
+
+  /// No description provided for @copyDiagnosticsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not copy. Select the report text and copy it manually.'**
+  String get copyDiagnosticsFailed;
+
+  /// No description provided for @refreshDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get refreshDiagnostics;
+
+  /// No description provided for @signalWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected, but Windows has not supplied audio yet. Play a video on the PC. If it stays silent, open diagnostics.'**
+  String get signalWaiting;
+
+  /// No description provided for @signalQuiet.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected, but no Windows sound was detected in the last 5 seconds. This is normal when playback is paused. If something is playing, open diagnostics.'**
+  String get signalQuiet;
+
+  /// No description provided for @signalDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows sound detected. If the phone is silent, check its media volume and open diagnostics.'**
+  String get signalDetected;
+
   /// No description provided for @noDevices.
   ///
   /// In en, this message translates to:

@@ -84,6 +84,17 @@ Bluetooth/headphones temporarily disconnected, and the complete release ZIP
 extracted. Then use [Troubleshooting](TROUBLESHOOTING.md). Do not guess or tell
 the user to weaken security settings.
 
+If the phone is connected but silent, **do not treat Streaming as proof of
+sound**. Ask the user to play a PC video for 15 seconds and send the report from
+the graph icon beside Disconnect (Copy report in newer builds), plus the
+Windows build from `winver`. Compare captured signal, Android received frames,
+playback-head progress, speaker route, and media volume using the
+[silent-connection guide](TROUBLESHOOTING.md#connected-but-the-phone-is-silent).
+Never infer the cause from the lack of physical speakers alone: an enabled
+HDMI/display output may still work. Stereo Mix/microphone input is unnecessary.
+If an app cannot render because Windows has no usable output, AudioShare cannot
+manufacture that missing audio or silently install a virtual audio driver.
+
 ## Copy and send this prompt
 
 ```text

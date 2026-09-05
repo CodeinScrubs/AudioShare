@@ -87,6 +87,23 @@ add_custom_command(TARGET system_capture_integration_test POST_BUILD
     "$<TARGET_FILE:audio_capture>"
     "$<TARGET_FILE_DIR:system_capture_integration_test>")
 
+# Hardware regression for the timer-driven default endpoint, which receives
+# no event notifications. It requires real, non-silent PCM. Never shipped.
+add_library(audio_capture_no_events SHARED EXCLUDE_FROM_ALL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../native/audio_capture.cpp")
+set_target_properties(audio_capture_no_events PROPERTIES PREFIX "")
+target_compile_definitions(audio_capture_no_events PRIVATE
+  AUDIOSHARE_FORCE_DEFAULT_ENDPOINT AUDIOSHARE_TEST_SUPPRESS_CAPTURE_EVENT)
+target_link_libraries(audio_capture_no_events PRIVATE mmdevapi ole32 ws2_32 winmm)
+apply_standard_settings(audio_capture_no_events)
+add_executable(capture_no_events_test EXCLUDE_FROM_ALL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../native/system_capture_integration_test.cpp")
+target_compile_definitions(capture_no_events_test PRIVATE
+  AUDIOSHARE_TEST_DEFAULT_TIMER)
+target_link_libraries(capture_no_events_test PRIVATE ws2_32)
+apply_standard_settings(capture_no_events_test)
+add_dependencies(capture_no_events_test audio_capture_no_events)
+
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
@@ -152,6 +169,7 @@ install(FILES
   "${REPOSITORY_ROOT}/docs/GETTING_STARTED.md"
   "${REPOSITORY_ROOT}/docs/AI_ASSISTANT_SETUP.md"
   "${REPOSITORY_ROOT}/docs/TROUBLESHOOTING.md"
+  "${REPOSITORY_ROOT}/docs/WORK_PC_INVESTIGATION.md"
   "${REPOSITORY_ROOT}/docs/PROTOCOL.md"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/docs"
   COMPONENT Runtime)

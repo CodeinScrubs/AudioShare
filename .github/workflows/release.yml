@@ -66,7 +66,7 @@ jobs:
       - name: Build Debug host and native regressions
         run: |
           flutter build windows --debug
-          cmake --build build/windows/x64 --config Debug --target wire_protocol_test audio_mixer_test system_capture_integration_test
+          cmake --build build/windows/x64 --config Debug --target wire_protocol_test audio_mixer_test system_capture_integration_test capture_no_events_test
           $wireTest = Get-ChildItem build/windows/x64 -Recurse -Filter wire_protocol_test.exe | Select-Object -First 1
           $mixerTest = Get-ChildItem build/windows/x64 -Recurse -Filter audio_mixer_test.exe | Select-Object -First 1
           $integrationTest = Get-ChildItem build/windows/x64 -Recurse -Filter system_capture_integration_test.exe | Select-Object -First 1
@@ -120,7 +120,7 @@ jobs:
 
       - name: Build and validate portable Release package
         run: |
-          flutter build windows --release
+          flutter build windows --release --dart-define="AUDIOSHARE_BUILD_LABEL=$env:GITHUB_REF_NAME"
           $output = "..\dist\AudioShare-USB-Windows-$env:GITHUB_REF_NAME.zip"
           ..\tools\package_windows_release.ps1 `
             -BundleDirectory .\build\windows\x64\runner\Release `

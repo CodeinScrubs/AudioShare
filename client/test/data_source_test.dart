@@ -228,13 +228,13 @@ class FakeAudioCaptureController implements AudioCaptureController {
   @override
   int get endpointQueueHighWaterFrames => 0;
   @override
-  int get capturedFrames => 0;
+  int capturedFrames = 0;
   @override
   int get capturePeakPermille => 0;
   @override
   int get captureRmsPermille => 0;
   @override
-  int get lastNonSilentAgeMilliseconds => 0xFFFFFFFF;
+  int lastNonSilentAgeMilliseconds = 0xFFFFFFFF;
 
   @override
   bool initialize() {
@@ -435,6 +435,44 @@ void main() {
       expect(audio.startCalls, 1);
     },
   );
+
+  test('silence is visible but never tears down a healthy session', () async {
+    adb.snapshot = [usbPhone()];
+    final dataSource = createSource(enableBackgroundTimers: true);
+    expect(dataSource.captureSignalStatus, CaptureSignalStatus.inactive);
+    await waitUntil(() => dataSource.overallPhase == ConnectionPhase.streaming);
+    expect(dataSource.captureSignalStatus, CaptureSignalStatus.waiting);
+    final stopsAfterConnect = audio.stopCalls;
+    audio.capturedFrames = 48000;
+    expect(dataSource.captureSignalStatus, CaptureSignalStatus.quiet);
+    audio.lastNonSilentAgeMilliseconds = 4999;
+    expect(dataSource.captureSignalStatus, CaptureSignalStatus.detected);
+    audio.lastNonSilentAgeMilliseconds = 5000;
+    expect(dataSource.captureSignalStatus, CaptureSignalStatus.quiet);
+
+    var notifications = 0;
+    dataSource.addListener(() => notifications++);
+    await waitUntil(() => notifications > 0);
+    notifications = 0;
+    audio.lastNonSilentAgeMilliseconds = 0;
+    await waitUntil(() => notifications > 0);
+    expect(dataSource.streamingDiagnostics, contains('signal_status=detected'));
+    expect(dataSource.streamingDiagnostics, contains('host_os='));
+    expect(
+      dataSource.streamingDiagnostics,
+      contains('global_loopback_hresult=0x00000000'),
+    );
+    expect(audio.startCalls, 1);
+    expect(audio.stopCalls, stopsAfterConnect);
+    expect(adb.launchCalls, 1);
+    expect(dataSource.takePendingError(), isNull);
+
+    dataSource.disconnectDevice('USB123');
+    await waitUntil(
+      () => dataSource.overallPhase == ConnectionPhase.phoneReady,
+    );
+    expect(dataSource.captureSignalStatus, CaptureSignalStatus.inactive);
+  });
 
   test('startup package failure is actionable and retryable', () async {
     adb

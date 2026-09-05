@@ -68,6 +68,63 @@ EDR, UAC, or organizational security controls.
 
 ## 5. Windows source sound
 
+### Connected, but the phone is silent
+
+An active USB connection does not prove that Windows is producing sound. Do
+not repeatedly disconnect, reinstall, or change drivers before checking this:
+
+1. Leave a normal browser video playing **on the PC** for at least 15 seconds.
+   Unmute the player, browser tab, and that app in the Windows volume mixer.
+2. Raise the phone's **media** volume, not its ringtone volume. Do not start
+   music on the phone to test it while AudioShare is connected.
+3. Click the small graph/heartbeat icon beside **Disconnect**. In builds with
+   **Copy report**, click it. Otherwise select the diagnostic text and copy it,
+   or take screenshots including the bottom of the report. Use **Refresh** to
+   take another snapshot while the PC video continues playing.
+4. Send the report and the AudioShare release name to your helper. On Windows,
+   press **Windows+R**, type `winver`, press Enter, and include its build number
+   if the report does not already show it. Review/redact personal device names,
+   paths, or serial numbers before posting a report publicly.
+
+What the measurements mean (compare two snapshots several seconds apart):
+
+| Measurement | What it establishes |
+| --- | --- |
+| `captured_frames=0` | Windows has supplied no PCM to the host yet. |
+| Frames increase, `last_non_silent_age_ms=never` | PCM is being handled, but no meaningful signal has been detected. The compatibility mixer can generate silent PCM while endpoints are idle. |
+| `last_non_silent_age_ms` stays below 5000 | The host recently detected Windows audio. This does not prove audible phone output. |
+| `android_received_frames` increases | PCM reaches the companion, even if that PCM is silent. |
+| `android_written_frames` and `android_playback_head_frames` increase | Android accepts PCM and advances playback; check media volume and `android_route`. |
+
+The new status message is informational: a paused video or a quiet PC is normal
+and must not cause a reconnect loop. **Refresh** is intentional; the report
+stays still so it can be selected and copied accurately.
+
+### A PC without speakers
+
+Physical speakers are not required when Windows has a usable audio output.
+For example, a monitor/HDMI output can provide a Windows playback endpoint even
+when the monitor has no audible speaker. Leave the usable output enabled and
+selected. A listed output alone does not prove its driver or an app is actually
+rendering sound.
+
+**Stereo Mix and a microphone are not required.** AudioShare captures Windows
+render outputs, not microphone input. Enabling Realtek Stereo Mix does not
+repair sound routed through a separate HDMI/display driver.
+
+If Windows has no usable render endpoint, some source apps will not produce
+audio at all. AudioShare cannot capture samples that an app never renders and
+does not create a virtual sound card. Installing/repairing an audio or ADB driver
+or changing workplace device policy may require IT/admin permission. Do not
+disable workplace protections; no portable app can promise to remove all such
+requirements.
+
+Windows endpoint loopback and its independence from Stereo Mix are documented
+in [Microsoft's loopback recording guide](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording).
+The [process-loopback sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/)
+explains that endpoint-independent capture still receives silence when there
+are no source rendering streams.
+
 - This fork captures system audio, not one selected process. Global mode is
   endpoint-independent; the compatibility mixer captures every usable active
   render endpoint. The final fallback is explicitly limited to the default

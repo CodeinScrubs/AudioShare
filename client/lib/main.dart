@@ -10,6 +10,7 @@ import 'l10n/generated/app_localizations.dart';
 import 'models/device_model.dart';
 import 'services/audio_capture.dart' show WindowsCaptureMode;
 import 'utils/prefs.dart';
+import 'widgets/streaming_diagnostics_dialog.dart';
 
 const _supportedLocales = [Locale('en'), Locale('zh')];
 const _languagePreferenceKey = 'locale';
@@ -247,6 +248,15 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
         child: Column(
           children: [
             Expanded(child: _buildContent(l10n)),
+            if (_dataSource.captureSignalStatus != CaptureSignalStatus.inactive)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(switch (_dataSource.captureSignalStatus) {
+                  CaptureSignalStatus.waiting => l10n.signalWaiting,
+                  CaptureSignalStatus.quiet => l10n.signalQuiet,
+                  _ => l10n.signalDetected,
+                }, style: Theme.of(context).textTheme.bodySmall),
+              ),
             _buildCheckBox(l10n),
           ],
         ),
@@ -456,20 +466,9 @@ class _AudioShareHomePageState extends State<AudioShareHomePage>
     String deviceName,
   ) => showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text('${l10n.streamingDiagnostics} — $deviceName'),
-      content: SingleChildScrollView(
-        child: SelectableText(
-          _dataSource.streamingDiagnostics,
-          style: const TextStyle(fontFamily: 'monospace'),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.ok),
-        ),
-      ],
+    builder: (context) => StreamingDiagnosticsDialog(
+      deviceName: deviceName,
+      readReport: () => _dataSource.streamingDiagnostics,
     ),
   );
 

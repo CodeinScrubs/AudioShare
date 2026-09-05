@@ -12,6 +12,13 @@ bundled ADB, and matching companion APK:
 
 [Download AudioShare USB for Windows](https://github.com/CodeinScrubs/AudioShare/releases/tag/v3.0.0-rc.4)
 
+**Connected but silent on a work PC?** Start with the
+[silent-connection checks](docs/TROUBLESHOOTING.md#connected-but-the-phone-is-silent).
+The current source adds a timer-driven legacy capture fix and clearer signal
+diagnostics after RC4; these changes are not in the linked RC4 release. The
+reported work-PC failure is still awaiting target-PC verification. See the
+[investigation and test-build notes](docs/WORK_PC_INVESTIGATION.md).
+
 ### Ask an AI assistant to guide you
 
 You can give an AI assistant the two repository links below and ask it to walk
@@ -39,7 +46,7 @@ exact cleanup. Headless virtual audio can underrun, so the current Android
 hardening pass treats zero-drop timing as a physical-device gate. The Windows
 capture hierarchy passes strict
 native integration in global, multi-endpoint, and default-output modes with
-non-zero PCM. Flutter analysis and 39 supervisor/lifecycle/security/persistence
+non-zero PCM. Flutter analysis and 41 supervisor/lifecycle/security/persistence/UI
 tests pass. RC4 also reports Windows capture signal level and Android playback
 progress, journals exact AudioShare-owned ADB forwards for crash recovery,
 shows a visible warning when the phone media volume is muted or very low, and
@@ -103,6 +110,10 @@ mirrored-output suppression still require target-hardware evidence.
 
 The PC must already have a working Android USB/ADB driver. Installing a missing
 driver can require administrator access and is outside AudioShare's control.
+Physical speakers are not required if Windows has a usable playback endpoint,
+such as an enabled HDMI/monitor output. AudioShare cannot create missing audio
+when an application refuses to render without an output device, nor bypass
+workplace restrictions or install a virtual sound driver without permission.
 
 ## Daily use target
 

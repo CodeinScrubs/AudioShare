@@ -600,13 +600,17 @@ void FillCanonicalFormat(WAVEFORMATEX* format) {
 }
 
 HRESULT InitializeCanonicalLoopback(IAudioClient* audioClient,
-                                    const WAVEFORMATEX* format) {
+                                    const WAVEFORMATEX* format,
+                                    bool timerDriven = false) {
     const DWORD streamFlags = AUDCLNT_STREAMFLAGS_LOOPBACK |
-        AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
+        (timerDriven ? 0 : AUDCLNT_STREAMFLAGS_EVENTCALLBACK) |
         AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
         AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+    // Shared event-driven streams require a zero requested buffer duration.
+    // Only the timer-driven legacy fallback requests a scheduling cushion.
+    const REFERENCE_TIME bufferDuration = timerDriven ? 100 * 10000 : 0;
     return audioClient->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, streamFlags, 0, 0, format, nullptr);
+        AUDCLNT_SHAREMODE_SHARED, streamFlags, bufferDuration, 0, format, nullptr);
 }
 
 #if !defined(AUDIOSHARE_FORCE_DEFAULT_ENDPOINT)
@@ -1473,7 +1477,11 @@ DWORD WINAPI CaptureThread(LPVOID) {
                     "Activate default-endpoint WASAPI client", result));
                 break;
             }
-            result = InitializeCanonicalLoopback(audioClient, &format);
+            // A capacity cushion for timer-based draining on older systems.
+            // This is not an added playback delay: read all available packets
+            // on each tick instead of waiting for this buffer to fill.
+            result = InitializeCanonicalLoopback(
+                audioClient, &format, true);
             if (FAILED(result)) {
                 std::string message = HresultMessage(
                     "Initialize 48 kHz default-endpoint loopback", result);
@@ -1495,10 +1503,14 @@ DWORD WINAPI CaptureThread(LPVOID) {
             selectedMode = CaptureMode::kDefaultEndpointLoopback;
         }
 
-        captureEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-        if (captureEvent == nullptr) { SetError(2205, "Could not create the WASAPI capture event"); break; }
-        result = audioClient->SetEventHandle(captureEvent);
-        if (FAILED(result)) { SetError(2206, HresultMessage("Set WASAPI event handle", result)); break; }
+        const bool pollDefaultEndpoint =
+            selectedMode == CaptureMode::kDefaultEndpointLoopback;
+        if (!pollDefaultEndpoint) {
+            captureEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+            if (captureEvent == nullptr) { SetError(2205, "Could not create the WASAPI capture event"); break; }
+            result = audioClient->SetEventHandle(captureEvent);
+            if (FAILED(result)) { SetError(2206, HresultMessage("Set WASAPI event handle", result)); break; }
+        }
         result = audioClient->GetService(__uuidof(IAudioCaptureClient),
             reinterpret_cast<void**>(&captureClient));
         if (FAILED(result)) { SetError(2207, HresultMessage("Get WASAPI capture service", result)); break; }
@@ -1511,11 +1523,27 @@ DWORD WINAPI CaptureThread(LPVOID) {
         exitCode = 0;
 
         HANDLE waitHandles[2] = {g_stopEvent, captureEvent};
+#if defined(AUDIOSHARE_TEST_SUPPRESS_CAPTURE_EVENT)
+        // Preserve the no-notification reproducer independently of the
+        // selected timing mode. Reintroducing event-only capture must fail
+        // this regression even on modern Windows that normally signals it.
+        const DWORD captureWaitHandleCount = 1;
+#else
+        const DWORD captureWaitHandleCount = pollDefaultEndpoint ? 1 : 2;
+#endif
         while (g_captureRunning.load()) {
-            const DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, 2000);
+            const DWORD waitResult = WaitForMultipleObjects(
+                captureWaitHandleCount, waitHandles, FALSE,
+                pollDefaultEndpoint ? 10 : 2000);
             if (waitResult == WAIT_OBJECT_0) break;
-            if (waitResult == WAIT_TIMEOUT) continue;
-            if (waitResult != WAIT_OBJECT_0 + 1) { SetError(2209, "WASAPI capture wait failed"); exitCode = 1; break; }
+            if (waitResult == WAIT_TIMEOUT && !pollDefaultEndpoint) continue;
+            // Pre-1703 Windows (and some drivers) may initialize loopback
+            // successfully without signaling capture events. A timeout must
+            // still drain the default endpoint, not report silent success
+            // forever. The preferred global path retains its event-only wait.
+            if (waitResult != WAIT_OBJECT_0 + 1 && waitResult != WAIT_TIMEOUT) {
+                SetError(2209, "WASAPI capture wait failed"); exitCode = 1; break;
+            }
 
             UINT32 packetFrames = 0;
             result = captureClient->GetNextPacketSize(&packetFrames);

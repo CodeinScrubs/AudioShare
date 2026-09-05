@@ -18,6 +18,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamingDiagnostics => '传输诊断';
 
   @override
+  String get copyDiagnostics => '复制报告';
+
+  @override
+  String get diagnosticsCopied => '已复制';
+
+  @override
+  String get copyDiagnosticsFailed => '无法复制。请选择报告文本并手动复制。';
+
+  @override
+  String get refreshDiagnostics => '刷新';
+
+  @override
+  String get signalWaiting => '已连接，但 Windows 尚未提供音频。请在电脑上播放视频。如果仍无声，请打开诊断。';
+
+  @override
+  String get signalQuiet =>
+      '已连接，但最近 5 秒内未检测到 Windows 声音。暂停播放时这是正常的。如果正在播放，请打开诊断。';
+
+  @override
+  String get signalDetected => '已检测到 Windows 声音。如果手机无声，请检查手机媒体音量并打开诊断。';
+
+  @override
   String get noDevices => '未找到设备';
 
   @override

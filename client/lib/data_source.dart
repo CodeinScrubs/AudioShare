@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 
@@ -150,6 +151,8 @@ class _RetryFailureWindow {
   int count;
 }
 
+enum CaptureSignalStatus { inactive, waiting, quiet, detected }
+
 class DataSource extends ChangeNotifier {
   DataSource({
     AdbController? adb,
@@ -230,6 +233,7 @@ class DataSource extends ChangeNotifier {
   int _lastNotifiedActiveEndpointCount = 0;
   int _lastNotifiedMediaVolume = -1;
   int _lastNotifiedMediaVolumeMax = -1;
+  CaptureSignalStatus _lastNotifiedSignalStatus = CaptureSignalStatus.inactive;
 
   List<DeviceModel> get devices => _devices;
   int get deviceState => _deviceState;
@@ -283,6 +287,21 @@ class DataSource extends ChangeNotifier {
   int get lastNonSilentAgeMilliseconds =>
       _audioCapture.lastNonSilentAgeMilliseconds;
 
+  // Silence is normal when playback is paused. This is information for the
+  // user, never a reason to restart capture or steal Android audio focus.
+  CaptureSignalStatus get captureSignalStatus {
+    if (_overallPhase != ConnectionPhase.streaming) {
+      return CaptureSignalStatus.inactive;
+    }
+    final age = lastNonSilentAgeMilliseconds;
+    if (age != 0xFFFFFFFF && age < 5000) {
+      return CaptureSignalStatus.detected;
+    }
+    return capturedFrames == 0
+        ? CaptureSignalStatus.waiting
+        : CaptureSignalStatus.quiet;
+  }
+
   String get streamingDiagnostics {
     const sampleRate = 48000;
     String milliseconds(int frames) =>
@@ -300,7 +319,12 @@ class DataSource extends ChangeNotifier {
       final type => 'android_output_type_$type',
     };
     return [
+      'diagnostic_schema=2',
+      'build_label=${const String.fromEnvironment('AUDIOSHARE_BUILD_LABEL', defaultValue: 'source build (unlabelled)')}',
+      'host_os=${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      'signal_status=${captureSignalStatus.name}',
       'capture_mode=${captureMode.name}',
+      'global_loopback_hresult=0x${(globalLoopbackHresult & 0xFFFFFFFF).toRadixString(16).padLeft(8, '0').toUpperCase()}',
       'active_endpoints=$activeEndpointCount',
       'host_queue_frames=$hostQueueFrames (${milliseconds(hostQueueFrames)} ms)',
       'host_queue_high_water_frames=$hostQueueHighWaterFrames (${milliseconds(hostQueueHighWaterFrames)} ms)',
@@ -636,14 +660,17 @@ class DataSource extends ChangeNotifier {
       final activeEndpointCount = _audioCapture.activeEndpointCount;
       final mediaVolume = _audioCapture.androidMediaVolume;
       final mediaVolumeMax = _audioCapture.androidMediaVolumeMax;
+      final signalStatus = captureSignalStatus;
       if (mode != _lastNotifiedCaptureMode ||
           activeEndpointCount != _lastNotifiedActiveEndpointCount ||
           mediaVolume != _lastNotifiedMediaVolume ||
-          mediaVolumeMax != _lastNotifiedMediaVolumeMax) {
+          mediaVolumeMax != _lastNotifiedMediaVolumeMax ||
+          signalStatus != _lastNotifiedSignalStatus) {
         _lastNotifiedCaptureMode = mode;
         _lastNotifiedActiveEndpointCount = activeEndpointCount;
         _lastNotifiedMediaVolume = mediaVolume;
         _lastNotifiedMediaVolumeMax = mediaVolumeMax;
+        _lastNotifiedSignalStatus = signalStatus;
         if (!_disposed) notifyListeners();
       }
       return;

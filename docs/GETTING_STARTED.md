@@ -69,8 +69,8 @@ connection again.
 - Android Studio or the Android Studio **desktop deployment** tool.
 - A separate installer, Windows service, virtual audio driver, or firewall rule.
 - Wi-Fi, an IP address, Bluetooth, or an Internet connection.
-- Administrator access, except possibly once to install a missing Android USB
-  driver supplied by Windows or your device manufacturer.
+- Administrator access in normal operation. Missing Windows audio/ADB drivers
+  or workplace restrictions can require IT help; AudioShare does not bypass them.
 - To select `idplayer.exe`; AudioShare captures ordinary Windows system audio,
   not just that one process.
 
@@ -82,9 +82,11 @@ Check these in order:
    supports data.
 2. Raise **media** volume on the phone and temporarily disconnect Bluetooth or
    wired headphones.
-3. In AudioShare, open the diagnostics view. A healthy session shows
-   **Streaming all Windows audio** (global mode), a nonzero Android received
-   frame count, and zero or near-zero drop/underrun counters.
+3. Leave a video playing on the PC for 15 seconds, then click the graph icon
+   beside **Disconnect**. Copy the report (or take screenshots) for your helper.
+   **Streaming** and an increasing frame count do not by themselves prove
+   sound: the frames may be silent. See the
+   [connected-but-silent checks](TROUBLESHOOTING.md#connected-but-the-phone-is-silent).
 4. If the phone says **unauthorized**, unlock it and accept the USB debugging
    prompt. If it says **offline**, unplug/reconnect and wait a few seconds.
 5. If AudioShare asks for a newer Windows build, the phone has a newer companion
@@ -100,6 +102,11 @@ application using exclusive-mode, ASIO, a protected/DRM path, or a hardware
 driver that bypasses shared WASAPI may not appear in system loopback. A missing
 Windows ADB driver or a policy such as AppLocker/WDAC is also outside the
 program's control.
+
+A PC does not need physical speakers, but the source app must still be able to
+produce audio. An enabled HDMI/monitor output can provide a usable Windows
+playback endpoint. Stereo Mix and microphone input are unnecessary. AudioShare
+does not install a virtual sound card when Windows has no usable output.
 
 For developers and testers, the full build and evidence instructions are in the
 repository [README](../README.md) and [manual test plan](MY_TEST_PLAN.md).

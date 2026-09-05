@@ -18,6 +18,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get streamingDiagnostics => 'Streaming diagnostics';
 
   @override
+  String get copyDiagnostics => 'Copy report';
+
+  @override
+  String get diagnosticsCopied => 'Copied';
+
+  @override
+  String get copyDiagnosticsFailed =>
+      'Could not copy. Select the report text and copy it manually.';
+
+  @override
+  String get refreshDiagnostics => 'Refresh';
+
+  @override
+  String get signalWaiting =>
+      'Connected, but Windows has not supplied audio yet. Play a video on the PC. If it stays silent, open diagnostics.';
+
+  @override
+  String get signalQuiet =>
+      'Connected, but no Windows sound was detected in the last 5 seconds. This is normal when playback is paused. If something is playing, open diagnostics.';
+
+  @override
+  String get signalDetected =>
+      'Windows sound detected. If the phone is silent, check its media volume and open diagnostics.';
+
+  @override
   String get noDevices => 'No devices found';
 
   @override
